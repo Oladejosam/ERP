@@ -99,7 +99,7 @@ class ManagementController extends BaseController
 
     public function employees(): void
     {
-        $this->requireAccess();
+        $this->requireCompanyModule('employees');
         $search = trim((string)($_GET['search'] ?? ''));
         $employees = $this->employeeModel->getEmployees();
 
@@ -121,7 +121,7 @@ class ManagementController extends BaseController
 
     public function viewEmployee(): void
     {
-        $this->requireAccess();
+        $this->requireCompanyModule('employees');
         $employeeId = (int)($_GET['id'] ?? 0);
         $employee = $this->employeeModel->getEmployeeById($employeeId);
 
@@ -139,7 +139,7 @@ class ManagementController extends BaseController
 
     public function saveEmployee(): void
     {
-        $this->requireAccess();
+        $this->requireCompanyModule('employees');
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $_SESSION['employee_flash'] = 'Invalid employee request.';
@@ -209,7 +209,7 @@ class ManagementController extends BaseController
 
     public function bulkEmployeeAction(): void
     {
-        $this->requireAccess();
+        $this->requireCompanyModule('employees');
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $_SESSION['employee_flash'] = 'Invalid employee action request.';
@@ -463,13 +463,13 @@ class ManagementController extends BaseController
 
     public function hr(): void
     {
-        $this->requireAccess();
+        $this->requireCompanyModule('hr');
         $this->view('management/hr', ['title' => 'Human Resources']);
     }
 
     public function procurement(): void
     {
-        $this->requireAccess();
+        $this->requireCompanyModule('procurement');
         $this->view('modules/index', ['title' => 'Procurement']);
     }
 

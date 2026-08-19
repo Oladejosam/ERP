@@ -16,6 +16,7 @@ class EmployeeModel extends Model
         $this->query(
             'CREATE TABLE IF NOT EXISTS employees (
                 id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL DEFAULT 1,
                 employee_code VARCHAR(50) NOT NULL UNIQUE,
                 first_name VARCHAR(100) NOT NULL,
                 last_name VARCHAR(100) NOT NULL,
@@ -37,19 +38,19 @@ class EmployeeModel extends Model
 
     public function getEmployees(): array
     {
-        $stmt = $this->query('SELECT * FROM employees ORDER BY created_at DESC, id DESC');
+        $stmt = $this->query('SELECT * FROM employees WHERE company_id = ? ORDER BY created_at DESC, id DESC', [$this->currentCompanyId()]);
         return $stmt->fetchAll();
     }
 
     public function getDepartments(): array
     {
-        $stmt = $this->query('SELECT DISTINCT department AS name FROM employees WHERE department IS NOT NULL AND department <> "" ORDER BY department ASC');
+        $stmt = $this->query('SELECT DISTINCT department AS name FROM employees WHERE company_id = ? AND department IS NOT NULL AND department <> "" ORDER BY department ASC', [$this->currentCompanyId()]);
         return $stmt->fetchAll();
     }
 
     public function getEmployeeById(int $id): ?array
     {
-        $stmt = $this->query('SELECT * FROM employees WHERE id = ? LIMIT 1', [$id]);
+        $stmt = $this->query('SELECT * FROM employees WHERE id = ? AND company_id = ? LIMIT 1', [$id, $this->currentCompanyId()]);
         $row = $stmt->fetch();
         return $row ?: null;
     }
@@ -61,7 +62,7 @@ class EmployeeModel extends Model
             return null;
         }
 
-        $stmt = $this->query('SELECT * FROM employees WHERE LOWER(email) = ? LIMIT 1', [$email]);
+        $stmt = $this->query('SELECT * FROM employees WHERE LOWER(email) = ? AND company_id = ? LIMIT 1', [$email, $this->currentCompanyId()]);
         $row = $stmt->fetch();
         return $row ?: null;
     }
@@ -73,7 +74,7 @@ class EmployeeModel extends Model
             return null;
         }
 
-        $stmt = $this->query('SELECT * FROM employees WHERE employee_code = ? LIMIT 1', [$code]);
+        $stmt = $this->query('SELECT * FROM employees WHERE employee_code = ? AND company_id = ? LIMIT 1', [$code, $this->currentCompanyId()]);
         $row = $stmt->fetch();
         return $row ?: null;
     }
@@ -123,8 +124,8 @@ class EmployeeModel extends Model
         }
 
         $this->query(
-            'INSERT INTO employees (employee_code, first_name, last_name, email, phone, department, position, designation, hire_date, salary, status, profile_picture, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-            [$employeeCode, $firstName, $lastName, $email, $phone, $department, $position, $designation !== '' ? $designation : null, $hireDate, number_format($salary, 2, '.', ''), $status, $profilePicture !== '' ? $profilePicture : null]
+            'INSERT INTO employees (company_id, employee_code, first_name, last_name, email, phone, department, position, designation, hire_date, salary, status, profile_picture, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+            [$this->currentCompanyId(), $employeeCode, $firstName, $lastName, $email, $phone, $department, $position, $designation !== '' ? $designation : null, $hireDate, number_format($salary, 2, '.', ''), $status, $profilePicture !== '' ? $profilePicture : null]
         );
 
         return (int)$this->db->lastInsertId();
@@ -136,11 +137,11 @@ class EmployeeModel extends Model
             throw new InvalidArgumentException('Invalid employee status.');
         }
 
-        $this->query('UPDATE employees SET status = ? WHERE id = ?', [$status, $employeeId]);
+        $this->query('UPDATE employees SET status = ? WHERE id = ? AND company_id = ?', [$status, $employeeId, $this->currentCompanyId()]);
     }
 
     public function deleteEmployee(int $employeeId): void
     {
-        $this->query('DELETE FROM employees WHERE id = ?', [$employeeId]);
+        $this->query('DELETE FROM employees WHERE id = ? AND company_id = ?', [$employeeId, $this->currentCompanyId()]);
     }
 }

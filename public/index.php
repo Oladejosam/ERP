@@ -11,20 +11,36 @@ require_once dirname(__DIR__) . '/app/Controllers/BaseController.php';
 require_once dirname(__DIR__) . '/app/Controllers/HomeController.php';
 require_once dirname(__DIR__) . '/app/Controllers/AuthController.php';
 require_once dirname(__DIR__) . '/app/Controllers/SetupController.php';
+require_once dirname(__DIR__) . '/app/Controllers/CompanyController.php';
 require_once dirname(__DIR__) . '/app/Controllers/ModuleController.php';
 require_once dirname(__DIR__) . '/app/Controllers/ManagementController.php';
 require_once dirname(__DIR__) . '/app/Models/UserModel.php';
 require_once dirname(__DIR__) . '/app/Models/RoleModel.php';
 require_once dirname(__DIR__) . '/app/Models/EmployeeModel.php';
 require_once dirname(__DIR__) . '/app/Models/CompanyModel.php';
+require_once dirname(__DIR__) . '/app/Models/ProjectModel.php';
+
+(new CompanyModel())->getCompanies();
 
 $routes = [
     '/' => ['HomeController', 'index'],
     '/login' => ['AuthController', 'login'],
     '/logout' => ['AuthController', 'logout'],
     '/setup' => ['SetupController', 'index'],
+    '/setup/select-company' => ['SetupController', 'selectCompany'],
+    '/company/workspace' => ['CompanyController', 'workspace'],
+    '/company/select' => ['CompanyController', 'select'],
+    '/company/create' => ['CompanyController', 'create'],
     '/modules' => ['ModuleController', 'index'],
     '/modules/inventory' => ['ModuleController', 'inventory'],
+    '/modules/projects' => ['ModuleController', 'projects'],
+    '/modules/projects/view' => ['ModuleController', 'projectDetail'],
+    '/modules/projects/document' => ['ModuleController', 'projectDocumentDownload'],
+    '/projects/assign-employee' => ['ModuleController', 'assignProjectEmployee'],
+    '/projects/remove-employee' => ['ModuleController', 'removeProjectEmployee'],
+    '/projects/budget/add' => ['ModuleController', 'addProjectBudget'],
+    '/projects/budget/delete' => ['ModuleController', 'deleteProjectBudget'],
+    '/projects/save' => ['ModuleController', 'saveProject'],
     '/inventory/save' => ['ModuleController', 'saveItem'],
     '/inventory/detail' => ['ModuleController', 'itemDetail'],
     '/modules/accounting' => ['ModuleController', 'accounting'],

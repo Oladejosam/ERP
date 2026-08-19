@@ -2,7 +2,7 @@
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <h2 class="fw-bold mb-1">Construction ERP Dashboard</h2>
+                <h2 class="fw-bold mb-1"><?php echo htmlspecialchars($companyName ?? 'Company'); ?> Dashboard</h2>
                 <p class="text-muted mb-0">Executive view for finance, HR, inventory, and field operations.</p>
             </div>
             <span class="badge bg-success-subtle text-success px-3 py-2">Live Operations</span>

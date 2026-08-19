@@ -24,7 +24,7 @@ $logoUrl = $logoPath !== '' ? BASE_URL . '/uploads/' . ltrim($logoPath, '/') : '
         <div class="card-body p-4 p-lg-5">
             <div class="mb-4">
                 <p class="text-uppercase text-muted small fw-semibold mb-2">System Setup</p>
-                <h1 class="h3 mb-2"><?php echo $isRegistered ? 'Company Settings' : 'Register Your Company'; ?></h1>
+                <h1 class="h3 mb-2"><?php echo $isNewCompany ? 'Register Another Company' : ($isRegistered ? 'Company Settings' : 'Register Your Company'); ?></h1>
                 <p class="text-muted mb-0">Set the company identity used across the ERP workspace.</p>
             </div>
 
@@ -54,13 +54,16 @@ $logoUrl = $logoPath !== '' ? BASE_URL . '/uploads/' . ltrim($logoPath, '/') : '
                 </div>
                 <div class="d-flex justify-content-between align-items-center gap-2">
                     <?php if ($isRegistered): ?>
-                        <a class="btn btn-outline-secondary" href="/ERP/public/">Cancel</a>
+                        <a class="btn btn-outline-secondary" href="/ERP/public/"><i class="bi bi-arrow-left me-1"></i>Back to Dashboard</a>
                     <?php else: ?>
                         <a class="btn btn-outline-secondary" href="/ERP/public/login">Login</a>
                     <?php endif; ?>
                     <button class="btn btn-primary" type="submit">Save Company Settings</button>
                 </div>
             </form>
+            <?php if ($isRegistered && !$isNewCompany): ?>
+                <div class="mt-3 text-end"><a href="/ERP/public/setup?new=1">Register another company</a></div>
+            <?php endif; ?>
         </div>
     </div>
 </div>

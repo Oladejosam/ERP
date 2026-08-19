@@ -14,24 +14,24 @@ class PayrollModel extends Model
 
     private function ensurePayrollTable(): void
     {
-        $this->query('CREATE TABLE IF NOT EXISTS payrolls (id INT PRIMARY KEY AUTO_INCREMENT, employee_id INT NOT NULL, payroll_month VARCHAR(20) NOT NULL, basic_salary DECIMAL(12,2) NOT NULL, allowances DECIMAL(12,2) DEFAULT 0.00, deductions DECIMAL(12,2) DEFAULT 0.00, net_pay DECIMAL(12,2) NOT NULL, sent_to_portal TINYINT(1) DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, FOREIGN KEY (employee_id) REFERENCES employees(id))');
+        $this->query('CREATE TABLE IF NOT EXISTS payrolls (id INT PRIMARY KEY AUTO_INCREMENT, company_id INT NOT NULL DEFAULT 1, employee_id INT NOT NULL, payroll_month VARCHAR(20) NOT NULL, basic_salary DECIMAL(12,2) NOT NULL, allowances DECIMAL(12,2) DEFAULT 0.00, deductions DECIMAL(12,2) DEFAULT 0.00, net_pay DECIMAL(12,2) NOT NULL, sent_to_portal TINYINT(1) DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, FOREIGN KEY (employee_id) REFERENCES employees(id))');
     }
 
     public function getEmployees(): array
     {
-        $stmt = $this->query('SELECT * FROM employees ORDER BY first_name ASC, last_name ASC');
+        $stmt = $this->query('SELECT * FROM employees WHERE company_id = ? ORDER BY first_name ASC, last_name ASC', [$this->currentCompanyId()]);
         return $stmt->fetchAll();
     }
 
     public function getPayrolls(): array
     {
-        $stmt = $this->query('SELECT p.*, e.first_name, e.last_name, e.position FROM payrolls p LEFT JOIN employees e ON e.id = p.employee_id ORDER BY p.created_at DESC');
+        $stmt = $this->query('SELECT p.*, e.first_name, e.last_name, e.position FROM payrolls p LEFT JOIN employees e ON e.id = p.employee_id WHERE p.company_id = ? ORDER BY p.created_at DESC', [$this->currentCompanyId()]);
         return $stmt->fetchAll();
     }
 
     public function getPortalPayrolls(): array
     {
-        $stmt = $this->query('SELECT p.*, e.first_name, e.last_name, e.position FROM payrolls p LEFT JOIN employees e ON e.id = p.employee_id WHERE p.sent_to_portal = 1 ORDER BY p.created_at DESC');
+        $stmt = $this->query('SELECT p.*, e.first_name, e.last_name, e.position FROM payrolls p LEFT JOIN employees e ON e.id = p.employee_id WHERE p.company_id = ? AND p.sent_to_portal = 1 ORDER BY p.created_at DESC', [$this->currentCompanyId()]);
         return $stmt->fetchAll();
     }
 
@@ -49,8 +49,8 @@ class PayrollModel extends Model
         }
 
         $this->query(
-            'INSERT INTO payrolls (employee_id, payroll_month, basic_salary, allowances, deductions, net_pay, sent_to_portal, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, NOW())',
-            [$employeeId, $month, number_format($basic, 2, '.', ''), number_format($allowances, 2, '.', ''), number_format($deductions, 2, '.', ''), number_format($net, 2, '.', '')]
+            'INSERT INTO payrolls (company_id, employee_id, payroll_month, basic_salary, allowances, deductions, net_pay, sent_to_portal, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NOW())',
+            [$this->currentCompanyId(), $employeeId, $month, number_format($basic, 2, '.', ''), number_format($allowances, 2, '.', ''), number_format($deductions, 2, '.', ''), number_format($net, 2, '.', '')]
         );
 
         return (int)$this->db->lastInsertId();
@@ -75,12 +75,12 @@ class PayrollModel extends Model
 
     public function markPayrollSent(int $id): void
     {
-        $this->query('UPDATE payrolls SET sent_to_portal = 1 WHERE id = ?', [$id]);
+        $this->query('UPDATE payrolls SET sent_to_portal = 1 WHERE id = ? AND company_id = ?', [$id, $this->currentCompanyId()]);
     }
 
     public function markAllPayrollsSent(): int
     {
-        $this->query('UPDATE payrolls SET sent_to_portal = 1 WHERE sent_to_portal = 0');
+        $this->query('UPDATE payrolls SET sent_to_portal = 1 WHERE company_id = ? AND sent_to_portal = 0', [$this->currentCompanyId()]);
         $stmt = $this->query('SELECT ROW_COUNT() AS sent_count');
         $row = $stmt->fetch();
         return (int)($row['sent_count'] ?? 0);

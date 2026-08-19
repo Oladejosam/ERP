@@ -13,26 +13,29 @@ class InventoryModel extends Model
 
     private function ensureInventoryTables(): void
     {
-        $this->query('CREATE TABLE IF NOT EXISTS inventory_categories (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(100) NOT NULL UNIQUE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)');
-        $this->query('CREATE TABLE IF NOT EXISTS inventory_items (id INT PRIMARY KEY AUTO_INCREMENT, item_code VARCHAR(50) NOT NULL UNIQUE, name VARCHAR(150) NOT NULL, category_id INT NOT NULL, unit VARCHAR(50) NOT NULL, cost_price DECIMAL(12,2) DEFAULT 0.00, selling_price DECIMAL(12,2) DEFAULT 0.00, opening_stock INT DEFAULT 0, current_stock INT DEFAULT 0, reorder_level INT DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES inventory_categories(id))');
+        $this->query('CREATE TABLE IF NOT EXISTS inventory_categories (id INT PRIMARY KEY AUTO_INCREMENT, company_id INT NOT NULL DEFAULT 1, name VARCHAR(100) NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY uq_inventory_category_company_name (company_id, name))');
+        $this->query('CREATE TABLE IF NOT EXISTS inventory_items (id INT PRIMARY KEY AUTO_INCREMENT, company_id INT NOT NULL DEFAULT 1, item_code VARCHAR(50) NOT NULL, name VARCHAR(150) NOT NULL, category_id INT NOT NULL, unit VARCHAR(50) NOT NULL, cost_price DECIMAL(12,2) DEFAULT 0.00, selling_price DECIMAL(12,2) DEFAULT 0.00, opening_stock INT DEFAULT 0, current_stock INT DEFAULT 0, reorder_level INT DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY uq_inventory_item_company_code (company_id, item_code), FOREIGN KEY (category_id) REFERENCES inventory_categories(id))');
         $this->query('CREATE TABLE IF NOT EXISTS inventory_change_history (id INT PRIMARY KEY AUTO_INCREMENT, item_id INT NOT NULL, change_reason TEXT NOT NULL, before_data TEXT NOT NULL, after_data TEXT NOT NULL, changed_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE)');
+        foreach (['inventory_categories', 'inventory_items'] as $table) {
+            $this->query('UPDATE `' . $table . '` SET company_id = 1 WHERE company_id IS NULL');
+        }
     }
 
     public function getCategories(): array
     {
-        $stmt = $this->query('SELECT * FROM inventory_categories ORDER BY name ASC');
+        $stmt = $this->query('SELECT * FROM inventory_categories WHERE company_id = ? ORDER BY name ASC', [$this->currentCompanyId()]);
         return $stmt->fetchAll();
     }
 
     public function getItems(): array
     {
-        $items = $this->query('SELECT i.*, c.name AS category_name FROM inventory_items i LEFT JOIN inventory_categories c ON c.id = i.category_id ORDER BY i.created_at DESC');
+        $items = $this->query('SELECT i.*, c.name AS category_name FROM inventory_items i LEFT JOIN inventory_categories c ON c.id = i.category_id WHERE i.company_id = ? ORDER BY i.created_at DESC', [$this->currentCompanyId()]);
         return $items->fetchAll();
     }
 
     public function getItemById(int $id): ?array
     {
-        $stmt = $this->query('SELECT i.*, c.name AS category_name FROM inventory_items i LEFT JOIN inventory_categories c ON c.id = i.category_id WHERE i.id = ? LIMIT 1', [$id]);
+        $stmt = $this->query('SELECT i.*, c.name AS category_name FROM inventory_items i LEFT JOIN inventory_categories c ON c.id = i.category_id WHERE i.id = ? AND i.company_id = ? LIMIT 1', [$id, $this->currentCompanyId()]);
         return $stmt->fetch() ?: null;
     }
 
@@ -49,13 +52,13 @@ class InventoryModel extends Model
             throw new InvalidArgumentException('Category name is required.');
         }
 
-        $stmt = $this->query('SELECT id FROM inventory_categories WHERE LOWER(name) = LOWER(?) LIMIT 1', [$trimmed]);
+        $stmt = $this->query('SELECT id FROM inventory_categories WHERE LOWER(name) = LOWER(?) AND company_id = ? LIMIT 1', [$trimmed, $this->currentCompanyId()]);
         $row = $stmt->fetch();
         if ($row) {
             return (int)$row['id'];
         }
 
-        $this->query('INSERT INTO inventory_categories (name, created_at) VALUES (?, NOW())', [$trimmed]);
+        $this->query('INSERT INTO inventory_categories (company_id, name, created_at) VALUES (?, ?, NOW())', [$this->currentCompanyId(), $trimmed]);
         return (int)$this->db->lastInsertId();
     }
 
@@ -77,8 +80,8 @@ class InventoryModel extends Model
         $reorderLevel = (int)($data['reorder_level'] ?? 0);
 
         $this->query(
-            'INSERT INTO inventory_items (item_code, name, category_id, unit, cost_price, selling_price, opening_stock, current_stock, reorder_level, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-            [$itemCode, $name, $categoryId, $unit, number_format($costPrice, 2, '.', ''), number_format($sellingPrice, 2, '.', ''), $openingStock, $currentStock, $reorderLevel]
+            'INSERT INTO inventory_items (company_id, item_code, name, category_id, unit, cost_price, selling_price, opening_stock, current_stock, reorder_level, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+            [$this->currentCompanyId(), $itemCode, $name, $categoryId, $unit, number_format($costPrice, 2, '.', ''), number_format($sellingPrice, 2, '.', ''), $openingStock, $currentStock, $reorderLevel]
         );
 
         return (int)$this->db->lastInsertId();
@@ -127,7 +130,8 @@ class InventoryModel extends Model
 
         if (!empty($fields)) {
             $params[] = $id;
-            $this->query('UPDATE inventory_items SET ' . implode(', ', $fields) . ' WHERE id = ?', $params);
+            $params[] = $this->currentCompanyId();
+            $this->query('UPDATE inventory_items SET ' . implode(', ', $fields) . ' WHERE id = ? AND company_id = ?', $params);
             $this->query('INSERT INTO inventory_change_history (item_id, change_reason, before_data, after_data, changed_at) VALUES (?, ?, ?, ?, NOW())', [$id, $changeReason, json_encode($before), json_encode($this->getItemById($id))]);
             return true;
         }

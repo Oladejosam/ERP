@@ -23,13 +23,23 @@ class HomeController extends BaseController
         }
 
         $pdo = Database::getInstance();
-        $employees = (int)$pdo->query('SELECT COUNT(*) FROM employees')->fetchColumn();
-        $inventoryItems = (int)$pdo->query('SELECT COUNT(*) FROM inventory_items')->fetchColumn();
-        $invoiceTotal = (float)$pdo->query('SELECT COALESCE(SUM(total_amount), 0) FROM invoices')->fetchColumn();
-        $purchaseTotal = (float)$pdo->query('SELECT COALESCE(SUM(total_amount), 0) FROM purchase_orders')->fetchColumn();
+        $companyId = max(1, (int)($_SESSION['selected_company_id'] ?? 1));
+        $employeeStmt = $pdo->prepare('SELECT COUNT(*) FROM employees WHERE company_id = ?');
+        $employeeStmt->execute([$companyId]);
+        $employees = (int)$employeeStmt->fetchColumn();
+        $inventoryStmt = $pdo->prepare('SELECT COUNT(*) FROM inventory_items WHERE company_id = ?');
+        $inventoryStmt->execute([$companyId]);
+        $inventoryItems = (int)$inventoryStmt->fetchColumn();
+        $invoiceStmt = $pdo->prepare('SELECT COALESCE(SUM(total_amount), 0) FROM invoices WHERE company_id = ?');
+        $invoiceStmt->execute([$companyId]);
+        $invoiceTotal = (float)$invoiceStmt->fetchColumn();
+        $purchaseStmt = $pdo->prepare('SELECT COALESCE(SUM(total_amount), 0) FROM purchase_orders WHERE company_id = ?');
+        $purchaseStmt->execute([$companyId]);
+        $purchaseTotal = (float)$purchaseStmt->fetchColumn();
 
         $this->view('dashboard/index', [
             'title' => 'Dashboard',
+            'companyName' => (string)($companySettings['company_name'] ?? ''),
             'employees' => $employees,
             'inventory_items' => $inventoryItems,
             'revenue' => $invoiceTotal,

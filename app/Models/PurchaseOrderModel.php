@@ -66,7 +66,9 @@ class PurchaseOrderModel extends Model
              FROM purchase_orders po
              LEFT JOIN suppliers s ON po.supplier_id = s.id
              LEFT JOIN projects p ON po.project_id = p.id
-             ORDER BY po.order_date DESC, po.id DESC'
+             WHERE po.company_id = ?
+             ORDER BY po.order_date DESC, po.id DESC',
+            [$this->currentCompanyId()]
         );
 
         return $stmt->fetchAll();
@@ -80,8 +82,8 @@ class PurchaseOrderModel extends Model
              FROM purchase_orders po
              LEFT JOIN suppliers s ON po.supplier_id = s.id
              LEFT JOIN projects p ON po.project_id = p.id
-             WHERE po.id = ? LIMIT 1',
-            [$id]
+             WHERE po.id = ? AND po.company_id = ? LIMIT 1',
+            [$id, $this->currentCompanyId()]
         );
 
         $purchaseOrder = $stmt->fetch();
@@ -123,7 +125,8 @@ class PurchaseOrderModel extends Model
     public function getSuppliers(): array
     {
         $stmt = $this->query(
-            'SELECT id, supplier_code, company_name FROM suppliers WHERE status = "active" ORDER BY company_name ASC'
+            'SELECT id, supplier_code, company_name FROM suppliers WHERE company_id = ? AND status = "active" ORDER BY company_name ASC',
+            [$this->currentCompanyId()]
         );
         return $stmt->fetchAll();
     }
@@ -131,21 +134,22 @@ class PurchaseOrderModel extends Model
     public function getProjects(): array
     {
         $stmt = $this->query(
-            'SELECT id, project_number, name FROM projects ORDER BY project_number ASC'
+            'SELECT id, project_number, name FROM projects WHERE company_id = ? ORDER BY project_number ASC',
+            [$this->currentCompanyId()]
         );
         return $stmt->fetchAll();
     }
 
     public function getSupplierIdByCode(string $supplierCode): ?int
     {
-        $stmt = $this->query('SELECT id FROM suppliers WHERE LOWER(supplier_code) = ? LIMIT 1', [trim(strtolower($supplierCode))]);
+        $stmt = $this->query('SELECT id FROM suppliers WHERE LOWER(supplier_code) = ? AND company_id = ? LIMIT 1', [trim(strtolower($supplierCode)), $this->currentCompanyId()]);
         $row = $stmt->fetch();
         return $row ? (int)$row['id'] : null;
     }
 
     public function getProjectIdByNumber(string $projectNumber): ?int
     {
-        $stmt = $this->query('SELECT id FROM projects WHERE LOWER(project_number) = ? LIMIT 1', [trim(strtolower($projectNumber))]);
+        $stmt = $this->query('SELECT id FROM projects WHERE LOWER(project_number) = ? AND company_id = ? LIMIT 1', [trim(strtolower($projectNumber)), $this->currentCompanyId()]);
         $row = $stmt->fetch();
         return $row ? (int)$row['id'] : null;
     }
@@ -160,9 +164,9 @@ class PurchaseOrderModel extends Model
         $status = trim((string)($data['status'] ?? 'draft')) ?: 'draft';
 
         $this->query(
-            'INSERT INTO purchase_orders (po_number, supplier_id, project_id, order_date, total_amount, status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, NOW())',
-            [$poNumber, $supplierId, $projectId, $orderDate, $totalAmount, $status]
+            'INSERT INTO purchase_orders (company_id, po_number, supplier_id, project_id, order_date, total_amount, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
+            [$this->currentCompanyId(), $poNumber, $supplierId, $projectId, $orderDate, $totalAmount, $status]
         );
 
         $purchaseOrderId = (int)$this->db->lastInsertId();

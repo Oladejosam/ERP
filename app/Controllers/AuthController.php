@@ -8,6 +8,7 @@ require_once APP_ROOT . '/core/Controller.php';
 require_once APP_ROOT . '/core/Auth.php';
 require_once APP_ROOT . '/app/Models/UserModel.php';
 require_once APP_ROOT . '/app/Models/RoleModel.php';
+require_once APP_ROOT . '/app/Models/CompanyModel.php';
 
 class AuthController extends Controller
 {
@@ -26,6 +27,9 @@ class AuthController extends Controller
 
         if (!empty($_SESSION['user'])) {
             $roleName = strtolower((string)($_SESSION['user']['role_name'] ?? ''));
+            if (in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+                $this->redirect('/company/workspace');
+            }
             if ($roleName === 'staff') {
                 $this->redirect('/portal/staff');
             }
@@ -63,6 +67,9 @@ class AuthController extends Controller
                             setcookie('remember_email', $email, time() + 60 * 60 * 24 * 30, '/');
                         } else {
                             setcookie('remember_email', '', time() - 3600, '/');
+                        }
+                        if ($roleName === 'super admin' || $roleName === 'superadministrator' || $roleName === 'super administrator') {
+                            $this->redirect('/company/workspace');
                         }
                         if ($roleName === 'staff') {
                             $this->redirect('/portal/staff');

@@ -17,15 +17,22 @@ class SetupController extends BaseController
     {
         $settings = $this->companyModel->getSettings();
         $isRegistered = trim((string)($settings['company_name'] ?? '')) !== '';
+        $isNewCompany = !empty($_GET['new']);
 
         if ($isRegistered && empty($_SESSION['user'])) {
             $this->redirect('/login');
         }
+        if ($isRegistered && !empty($_SESSION['user']) && !$this->isSuperAdmin()) {
+            $this->redirect('/');
+        }
 
         $error = '';
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            if ($isRegistered) {
+            if ($isRegistered || $isNewCompany) {
                 $this->requireAccess();
+                if (!$this->isSuperAdmin()) {
+                    $this->redirect('/');
+                }
             }
 
             $companyName = trim((string)($_POST['company_name'] ?? ''));
@@ -37,7 +44,11 @@ class SetupController extends BaseController
             } else {
                 try {
                     $logoPath = $this->handleLogoUpload($_FILES['company_logo'] ?? null);
-                    $this->companyModel->saveSettings($companyName, strtolower($themeColor), $logoPath);
+                    if ($isNewCompany) {
+                        $this->companyModel->createCompany($companyName, strtolower($themeColor), $logoPath);
+                    } else {
+                        $this->companyModel->saveSettings($companyName, strtolower($themeColor), $logoPath);
+                    }
                     $_SESSION['company_flash'] = 'Company settings saved successfully.';
                     $this->redirect(!empty($_SESSION['user']) ? '/' : '/login');
                 } catch (Throwable $exception) {
@@ -49,11 +60,31 @@ class SetupController extends BaseController
         }
 
         $this->view('setup/index', [
-            'title' => $isRegistered ? 'Company Settings' : 'Register Company',
+            'title' => $isNewCompany ? 'Register Company' : ($isRegistered ? 'Company Settings' : 'Register Company'),
             'settings' => $settings,
             'error' => $error,
             'isRegistered' => $isRegistered,
+            'isNewCompany' => $isNewCompany,
         ]);
+    }
+
+    public function selectCompany(): void
+    {
+        $this->requireAccess();
+        $role = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (!in_array($role, ['super admin', 'superadministrator', 'super administrator'], true)) {
+            $this->redirect('/');
+        }
+        $companyId = (int)($_POST['company_id'] ?? 0);
+        if (!$this->companyModel->selectCompany($companyId)) {
+            $_SESSION['company_flash'] = 'The selected company is not available.';
+        }
+        $this->redirect('/');
+    }
+
+    private function isSuperAdmin(): bool
+    {
+        return in_array(strtolower(trim((string)($_SESSION['user']['role_name'] ?? ''))), ['super admin', 'superadministrator', 'super administrator'], true);
     }
 
     private function handleLogoUpload(?array $file): ?string
