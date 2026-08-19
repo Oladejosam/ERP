@@ -1,0 +1,3 @@
+PO Number	Supplier Code	Project Number	Order Date	Total Amount	Status	Product Name	Quantity	Price Rate
+PO003	SUP001	PRJ001	2025-07-01	1500000.00	approved	Cement Bags	100	15000.00
+PO004	SUP002	PRJ002	2025-07-02	850000.00	received	Steel Rods	200	4250.00
