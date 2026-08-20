@@ -38,15 +38,32 @@ foreach ($companies as $company) {
                             <input type="hidden" name="company_id" value="<?php echo (int)$company['id']; ?>">
                             <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
                                 <div class="fw-semibold"><?php echo htmlspecialchars($company['company_name']); ?></div>
-                                <span class="badge text-bg-light"><?php echo htmlspecialchars($company['theme_color']); ?></span>
+                                <div class="d-flex gap-2 align-items-center">
+                                    <span class="badge <?php echo (int)$company['is_active'] === 1 ? 'text-bg-success' : 'text-bg-secondary'; ?>">
+                                        <?php echo (int)$company['is_active'] === 1 ? 'Active' : 'Disabled'; ?>
+                                    </span>
+                                    <span class="badge text-bg-light"><?php echo htmlspecialchars($company['theme_color']); ?></span>
+                                </div>
+                            </div>
+                            <div class="small text-muted mb-2">
+                                Created: <?php echo !empty($company['created_at']) ? htmlspecialchars(date('F j, Y g:i A', strtotime((string)$company['created_at']))) : 'N/A'; ?>
                             </div>
                             <div class="small text-muted mb-2">Choose modules for this company before entering its workspace.</div>
+                            <?php if ((int)$company['is_active'] === 1): ?>
                             <div class="row g-2 mb-3">
                                 <?php $access = $company['module_access'] ?? []; foreach ($modules as $moduleKey => $moduleLabel): ?>
                                     <div class="col-md-6"><label class="form-check"><input class="form-check-input" type="checkbox" name="modules[]" value="<?php echo htmlspecialchars($moduleKey); ?>" <?php echo in_array($moduleKey, $access, true) ? 'checked' : ''; ?>><span class="form-check-label"><?php echo htmlspecialchars($moduleLabel); ?></span></label></div>
                                 <?php endforeach; ?>
                             </div>
                             <button class="btn btn-primary" type="submit">Open Company</button>
+                            <?php endif; ?>
+                        </form>
+                        <form method="post" action="/ERP/public/company/set-active" class="mt-n3 mb-3 px-3">
+                            <input type="hidden" name="company_id" value="<?php echo (int)$company['id']; ?>">
+                            <input type="hidden" name="active" value="<?php echo (int)$company['is_active'] === 1 ? '0' : '1'; ?>">
+                            <button class="btn btn-sm <?php echo (int)$company['is_active'] === 1 ? 'btn-outline-danger' : 'btn-outline-success'; ?>" type="submit" onclick="return confirm('<?php echo (int)$company['is_active'] === 1 ? 'Disable this company and all its system features?' : 'Enable this company again?'; ?>');">
+                                <?php echo (int)$company['is_active'] === 1 ? 'Disable Company' : 'Enable Company'; ?>
+                            </button>
                         </form>
                     <?php endforeach; ?>
                 </div>

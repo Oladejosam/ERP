@@ -12,6 +12,15 @@ class BaseController extends Controller
             header('Location: ' . BASE_URL . '/login');
             exit;
         }
+
+        $selectedCompanyId = (int)($_SESSION['selected_company_id'] ?? 0);
+        $isWorkspaceRoute = strpos((string)($_SERVER['REQUEST_URI'] ?? ''), '/company/workspace') !== false;
+        if ($selectedCompanyId > 0 && !$isWorkspaceRoute && !(new CompanyModel())->isCompanyActive($selectedCompanyId)) {
+            unset($_SESSION['selected_company_id']);
+            $_SESSION['company_flash'] = 'The selected company is disabled. Choose an active company to continue.';
+            header('Location: ' . BASE_URL . '/company/workspace');
+            exit;
+        }
     }
 
     protected function currentUser(): ?array

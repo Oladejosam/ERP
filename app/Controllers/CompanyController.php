@@ -18,7 +18,7 @@ class CompanyController extends BaseController
         $this->requireSuperAdmin();
         $this->view('company/workspace', [
             'title' => 'Select Company',
-            'companies' => $this->companyModel->getCompanies(),
+            'companies' => $this->companyModel->getCompanies(true),
             'modules' => CompanyModel::availableModules(),
             'selectedCompanyId' => (int)($_SESSION['selected_company_id'] ?? 0),
             'error' => '',
@@ -35,6 +35,24 @@ class CompanyController extends BaseController
         }
         $this->companyModel->saveModuleAccess($companyId, (array)($_POST['modules'] ?? []));
         $this->redirect('/');
+    }
+
+    public function setActive(): void
+    {
+        $this->requireSuperAdmin();
+        $companyId = (int)($_POST['company_id'] ?? 0);
+        $active = (string)($_POST['active'] ?? '0') === '1';
+
+        try {
+            $this->companyModel->setCompanyActive($companyId, $active);
+            if (!$active && (int)($_SESSION['selected_company_id'] ?? 0) === $companyId) {
+                unset($_SESSION['selected_company_id']);
+            }
+            $_SESSION['company_flash'] = $active ? 'Company enabled successfully.' : 'Company disabled successfully. Its data was preserved.';
+        } catch (Throwable $exception) {
+            $_SESSION['company_flash'] = 'Unable to update company status: ' . $exception->getMessage();
+        }
+        $this->redirect('/company/workspace');
     }
 
     public function create(): void
@@ -62,7 +80,7 @@ class CompanyController extends BaseController
     {
         $this->view('company/workspace', [
             'title' => 'Select Company',
-            'companies' => $this->companyModel->getCompanies(),
+            'companies' => $this->companyModel->getCompanies(true),
             'modules' => CompanyModel::availableModules(),
             'selectedCompanyId' => (int)($_SESSION['selected_company_id'] ?? 0),
             'error' => $error,

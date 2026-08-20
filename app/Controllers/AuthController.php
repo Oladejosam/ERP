@@ -20,6 +20,8 @@ class AuthController extends Controller
 
         $error = '';
         $success = '';
+        $companyModel = new CompanyModel();
+        $companies = $companyModel->getCompanies();
         $emailValue = $_COOKIE['remember_email'] ?? '';
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $emailValue = trim((string)($_GET['email'] ?? $emailValue));
@@ -43,24 +45,37 @@ class AuthController extends Controller
             } else {
                 $email = trim($_POST['email'] ?? '');
                 $password = trim($_POST['password'] ?? '');
+                $companyId = (int)($_POST['company_id'] ?? 0);
                 $remember = !empty($_POST['remember_me']);
 
-                if ($email === '' || $password === '') {
-                    $error = 'Please enter both your email and password.';
+                if ($email === '' || $password === '' || $companyId <= 0) {
+                    $error = 'Please enter your email, password, and select a company.';
                     $emailValue = $email;
+                } elseif (!$companyModel->isCompanyActive($companyId)) {
+                    $error = 'The selected company is not available.';
                 } else {
                     $model = new UserModel();
                     $roleModel = new RoleModel();
                     $roleModel->ensureStandardRoleSet();
                     $model->ensureSuperAdminUser();
                     $model->ensureTestLogisticsAccounts();
-                    $user = $model->authenticate($email, $password);
+                    $model->populateUsersFromEmployees();
+                    $user = $model->authenticate($email, $password, $companyId);
                     if ($user) {
+                        $_SESSION['selected_company_id'] = $companyId;
                         $user = $model->syncEmployeeProfile($user);
                     }
                     if ($user) {
                         $roleModel = new RoleModel();
                         $user['role_name'] = $roleModel->getRoleNameById((int)($user['role_id'] ?? 0));
+                        $roleName = strtolower((string)($user['role_name'] ?? ''));
+                        if (in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+                            $error = 'Super Admins must use the Super Admin portal.';
+                            $emailValue = $email;
+                            $user = null;
+                        }
+                    }
+                    if ($user) {
                         $_SESSION['user'] = $user;
                         $roleName = strtolower((string)($user['role_name'] ?? ''));
                         if ($remember) {
@@ -89,6 +104,65 @@ class AuthController extends Controller
             'error' => $error,
             'success' => $success,
             'emailValue' => $emailValue,
+            'companies' => $companies,
+            'csrfToken' => $_SESSION['csrf_token'],
+        ]);
+    }
+
+    public function superAdminLogin(): void
+    {
+        if (empty($_SESSION['csrf_token'])) {
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        }
+
+        $error = '';
+        $companyModel = new CompanyModel();
+        $companies = $companyModel->getCompanies();
+
+        if (!empty($_SESSION['user'])) {
+            $roleName = strtolower((string)($_SESSION['user']['role_name'] ?? ''));
+            if (in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+                $this->redirect('/company/workspace');
+            }
+            $error = 'This portal is for Super Admin accounts only.';
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $csrfToken = (string)($_POST['csrf_token'] ?? '');
+            $email = trim((string)($_POST['email'] ?? ''));
+            $password = trim((string)($_POST['password'] ?? ''));
+            $companyId = (int)($_POST['company_id'] ?? 0);
+
+            if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrfToken)) {
+                $error = 'Invalid session token. Please try again.';
+            } elseif ($email === '' || $password === '' || $companyId <= 0) {
+                $error = 'Enter your credentials and select an active company.';
+            } elseif (!$companyModel->isCompanyActive($companyId)) {
+                $error = 'The selected company is not available.';
+            } else {
+                $model = new UserModel();
+                $roleModel = new RoleModel();
+                $roleModel->ensureStandardRoleSet();
+                $model->ensureSuperAdminUser();
+                $model->populateUsersFromEmployees();
+                $user = $model->authenticate($email, $password, $companyId);
+                if ($user) {
+                    $user['role_name'] = $roleModel->getRoleNameById((int)($user['role_id'] ?? 0));
+                }
+                $roleName = strtolower((string)($user['role_name'] ?? ''));
+                if ($user && in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+                    $_SESSION['selected_company_id'] = $companyId;
+                    $_SESSION['user'] = $user;
+                    $this->redirect('/company/workspace');
+                }
+                $error = 'Invalid Super Admin credentials.';
+            }
+        }
+
+        $this->view('auth/super_admin_login', [
+            'title' => 'Super Admin Login',
+            'error' => $error,
+            'companies' => $companies,
             'csrfToken' => $_SESSION['csrf_token'],
         ]);
     }

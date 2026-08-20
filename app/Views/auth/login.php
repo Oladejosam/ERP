@@ -110,6 +110,17 @@
                     </div>
                 </div>
 
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="companyId">Company</label>
+                    <select class="form-select" id="companyId" name="company_id" required>
+                        <option value="">Select your company</option>
+                        <?php foreach (($companies ?? []) as $company): ?>
+                            <option value="<?php echo (int)$company['id']; ?>" <?php echo (int)($_POST['company_id'] ?? 0) === (int)$company['id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($company['company_name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-text">You can only enter a company assigned to your account.</div>
+                </div>
+
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" name="remember_me" id="rememberMe">
@@ -120,6 +131,7 @@
 
                 <button type="submit" class="btn btn-primary w-100">Sign In</button>
             </form>
+            <a href="/ERP/public/super-admin/login" class="btn btn-link text-muted w-100 mt-3">Super Admin sign in</a>
         </div>
     </div>
 </div>

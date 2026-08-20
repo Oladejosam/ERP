@@ -9,6 +9,7 @@
 <?php if (empty($employee)): ?>
     <div class="alert alert-warning">Employee record not found.</div>
 <?php else: ?>
+    <?php $visibleColumnKeys = array_fill_keys(array_column(($employeeColumns ?? []), 'key'), true); ?>
     <div class="row g-4">
         <div class="col-lg-4">
             <div class="card border-0 bg-light h-100">
@@ -21,6 +22,18 @@
                                     <?php echo htmlspecialchars(strtoupper(substr(($employee['first_name'] ?? 'E'), 0, 1) . substr(($employee['last_name'] ?? 'M'), 0, 1))); ?>
                                 </div>
                             <?php endif; ?>
+                            <?php if (isset($visibleColumnKeys['profile_picture'])): ?>
+                            <form action="/ERP/public/management/employees/update-photo" method="post" enctype="multipart/form-data" class="text-start mb-3">
+                                <input type="hidden" name="employee_id" value="<?php echo (int)$employee['id']; ?>">
+                                <label for="profilePicture" class="form-label small fw-semibold">Change profile picture</label>
+                                <input id="profilePicture" type="file" class="form-control form-control-sm" name="profile_picture" accept="image/jpeg,image/png,image/webp" required>
+                                <button type="submit" class="btn btn-sm btn-primary w-100 mt-2">Upload Picture</button>
+                            </form>
+                            <?php endif; ?>
+                            <?php if (!empty($_SESSION['employee_flash'])): ?>
+                                <div class="alert alert-success py-2"><?php echo htmlspecialchars($_SESSION['employee_flash']); ?></div>
+                                <?php unset($_SESSION['employee_flash']); ?>
+                            <?php endif; ?>
                             <h5 class="fw-bold mb-1"><?php echo htmlspecialchars(trim((($employee['first_name'] ?? '') . ' ' . ($employee['last_name'] ?? '')))); ?></h5>
                             <div class="text-muted"><?php echo htmlspecialchars($employee['position'] ?? 'N/A'); ?></div>
                             <span class="badge bg-<?php echo strtolower((string)($employee['status'] ?? 'active')) === 'active' ? 'success' : 'secondary'; ?> mt-3">
@@ -31,56 +44,45 @@
         </div>
 
         <div class="col-lg-8">
-            <div class="row g-3">
+            <form action="/ERP/public/management/employees/update" method="post">
+                <input type="hidden" name="employee_id" value="<?php echo (int)$employee['id']; ?>">
+                <div class="row g-3">
+                    <?php
+                    $editableFields = [
+                        'employee_code' => 'Employee Code', 'first_name' => 'First Name', 'last_name' => 'Last Name',
+                        'email' => 'Email', 'phone' => 'Phone', 'department' => 'Department', 'position' => 'Position',
+                        'designation' => 'Designation', 'hire_date' => 'Hire Date', 'salary' => 'Salary', 'nin' => 'NIN',
+                        'account_number' => 'Account Number', 'bank_name' => 'Bank Name', 'tin' => 'TIN', 'pfa' => 'PFA',
+                    ];
+                    foreach ($editableFields as $fieldName => $fieldLabel):
+                        if (!isset($visibleColumnKeys[$fieldName])) {
+                            continue;
+                        }
+                        $fieldType = $fieldName === 'hire_date' ? 'date' : ($fieldName === 'salary' ? 'number' : ($fieldName === 'email' ? 'email' : 'text'));
+                        $fieldValue = $employee[$fieldName] ?? '';
+                    ?>
                         <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <div class="small text-muted">Employee Code</div>
-                                <div class="fw-semibold"><?php echo htmlspecialchars($employee['employee_code'] ?? 'N/A'); ?></div>
-                            </div>
+                            <label class="form-label" for="<?php echo htmlspecialchars($fieldName); ?>"><?php echo htmlspecialchars($fieldLabel); ?></label>
+                            <input id="<?php echo htmlspecialchars($fieldName); ?>" type="<?php echo $fieldType; ?>" class="form-control" name="<?php echo htmlspecialchars($fieldName); ?>" value="<?php echo htmlspecialchars((string)$fieldValue); ?>" <?php echo $fieldName === 'salary' ? 'step="0.01" min="0"' : ''; ?> <?php echo in_array($fieldName, ['employee_code', 'first_name', 'last_name', 'email', 'phone', 'department', 'position', 'hire_date'], true) ? 'required' : ''; ?>>
                         </div>
+                    <?php endforeach; ?>
+                    <div class="col-md-6">
+                        <label class="form-label" for="status">Status</label>
+                        <select id="status" class="form-select" name="status">
+                            <?php foreach (['active' => 'Active', 'inactive' => 'Inactive', 'terminated' => 'Terminated'] as $statusValue => $statusLabel): ?>
+                                <option value="<?php echo $statusValue; ?>" <?php echo ($employee['status'] ?? '') === $statusValue ? 'selected' : ''; ?>><?php echo $statusLabel; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <?php foreach (($customFields ?? []) as $customField): ?>
                         <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <div class="small text-muted">Email</div>
-                                <div class="fw-semibold"><?php echo htmlspecialchars($employee['email'] ?? 'N/A'); ?></div>
-                            </div>
+                            <label class="form-label" for="custom_<?php echo (int)$customField['id']; ?>"><?php echo htmlspecialchars($customField['field_name']); ?></label>
+                            <input id="custom_<?php echo (int)$customField['id']; ?>" class="form-control" name="custom_fields[<?php echo (int)$customField['id']; ?>]" value="<?php echo htmlspecialchars((string)($customField['field_value'] ?? '')); ?>">
                         </div>
-                        <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <div class="small text-muted">Phone</div>
-                                <div class="fw-semibold"><?php echo htmlspecialchars($employee['phone'] ?? 'N/A'); ?></div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <div class="small text-muted">Department</div>
-                                <div class="fw-semibold"><?php echo htmlspecialchars($employee['department'] ?? 'N/A'); ?></div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <div class="small text-muted">Designation</div>
-                                <div class="fw-semibold"><?php echo htmlspecialchars($employee['designation'] ?? 'N/A'); ?></div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <div class="small text-muted">Hire Date</div>
-                                <div class="fw-semibold"><?php echo htmlspecialchars($employee['hire_date'] ?? 'N/A'); ?></div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <div class="small text-muted">Salary</div>
-                                <div class="fw-semibold">₦<?php echo number_format((float)($employee['salary'] ?? 0), 2); ?></div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="border rounded p-3 h-100">
-                                <div class="small text-muted">Created</div>
-                                <div class="fw-semibold"><?php echo htmlspecialchars($employee['created_at'] ?? 'N/A'); ?></div>
-                            </div>
-                        </div>
-            </div>
+                    <?php endforeach; ?>
+                </div>
+                <button type="submit" class="btn btn-primary mt-4">Save Employee Changes</button>
+            </form>
         </div>
     </div>
 <?php endif; ?>

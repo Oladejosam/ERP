@@ -8,18 +8,21 @@ require_once APP_ROOT . '/app/Controllers/BaseController.php';
 require_once APP_ROOT . '/app/Models/EmployeeModel.php';
 require_once APP_ROOT . '/app/Models/UserModel.php';
 require_once APP_ROOT . '/app/Models/RoleModel.php';
+require_once APP_ROOT . '/app/Models/RequisitionModel.php';
 
 class ManagementController extends BaseController
 {
     private EmployeeModel $employeeModel;
     private UserModel $userModel;
     private RoleModel $roleModel;
+    private RequisitionModel $requisitionModel;
 
     public function __construct()
     {
         $this->employeeModel = new EmployeeModel();
         $this->userModel = new UserModel();
         $this->roleModel = new RoleModel();
+        $this->requisitionModel = new RequisitionModel();
     }
 
     public function staffPortal(): void
@@ -115,6 +118,8 @@ class ManagementController extends BaseController
             'title' => 'Employees',
             'employees' => $employees,
             'departments' => $this->employeeModel->getDepartments(),
+            'customFields' => $this->employeeModel->getCustomFields(),
+            'employeeColumns' => $this->employeeModel->getEmployeeColumnOptions(),
             'search' => $search,
         ]);
     }
@@ -134,6 +139,8 @@ class ManagementController extends BaseController
             'title' => 'Employee Details',
             'employee' => $employee,
             'departments' => $this->employeeModel->getDepartments(),
+            'customFields' => $this->employeeModel->getCustomFieldValues($employeeId),
+            'employeeColumns' => $this->employeeModel->getEmployeeColumnOptions(),
         ]);
     }
 
@@ -174,6 +181,11 @@ class ManagementController extends BaseController
             'hire_date' => trim((string)($_POST['hire_date'] ?? date('Y-m-d'))),
             'salary' => (float)($_POST['salary'] ?? 0),
             'status' => trim((string)($_POST['status'] ?? 'active')),
+            'nin' => trim((string)($_POST['nin'] ?? '')),
+            'account_number' => trim((string)($_POST['account_number'] ?? '')),
+            'bank_name' => trim((string)($_POST['bank_name'] ?? '')),
+            'tin' => trim((string)($_POST['tin'] ?? '')),
+            'pfa' => trim((string)($_POST['pfa'] ?? '')),
         ];
 
         $profilePicture = $this->handleEmployeePhotoUpload($_FILES['profile_picture'] ?? null);
@@ -184,6 +196,7 @@ class ManagementController extends BaseController
         $employeeId = 0;
         try {
             $employeeId = $this->employeeModel->createEmployee($employeeData);
+            $this->employeeModel->saveCustomFieldValues($employeeId, (array)($_POST['custom_fields'] ?? []));
             $roleId = $this->roleModel->createRoleIfMissing($roleName, $roleName . ' access role');
             $this->userModel->createUser([
                 'name' => trim($employeeData['first_name'] . ' ' . $employeeData['last_name']),
@@ -207,6 +220,131 @@ class ManagementController extends BaseController
         }
     }
 
+    public function updateEmployeePhoto(): void
+    {
+        $this->requireCompanyModule('employees');
+        $employeeId = (int)($_POST['employee_id'] ?? 0);
+        $employee = $this->employeeModel->getEmployeeById($employeeId);
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$employee) {
+            $_SESSION['employee_flash'] = 'Invalid employee photo request.';
+            $this->redirect('/management/employees');
+        }
+
+        $file = $_FILES['profile_picture'] ?? null;
+        if (!$file || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            $_SESSION['employee_flash'] = 'Please choose a profile picture to upload.';
+            $this->redirect('/management/employees/view?id=' . $employeeId);
+        }
+
+        $profilePicture = $this->handleEmployeePhotoUpload($file);
+        if ($profilePicture === null) {
+            $_SESSION['employee_flash'] = 'Profile picture must be a JPG, PNG, or WebP image.';
+            $this->redirect('/management/employees/view?id=' . $employeeId);
+        }
+
+        $this->employeeModel->updateEmployeeProfilePicture($employeeId, $profilePicture);
+        $_SESSION['employee_flash'] = 'Profile picture updated successfully.';
+        $this->redirect('/management/employees/view?id=' . $employeeId);
+    }
+
+    public function populateEmployeeUsers(): void
+    {
+        $this->requireCompanyModule('employees');
+        $created = $this->userModel->populateUsersFromEmployees();
+        $_SESSION['employee_flash'] = $created . ' missing employee user account(s) populated successfully.';
+        $this->redirect('/management/employees');
+    }
+
+    public function updateEmployee(): void
+    {
+        $this->requireCompanyModule('employees');
+        $employeeId = (int)($_POST['employee_id'] ?? 0);
+        $employee = $this->employeeModel->getEmployeeById($employeeId);
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$employee) {
+            $_SESSION['employee_flash'] = 'Invalid employee update request.';
+            $this->redirect('/management/employees');
+        }
+
+        $email = strtolower(trim((string)($_POST['email'] ?? '')));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $_SESSION['employee_flash'] = 'A valid employee email is required.';
+            $this->redirect('/management/employees/view?id=' . $employeeId);
+        }
+
+        try {
+            $this->employeeModel->updateEmployee($employeeId, [
+                'employee_code' => $_POST['employee_code'] ?? '',
+                'first_name' => $_POST['first_name'] ?? '',
+                'last_name' => $_POST['last_name'] ?? '',
+                'email' => $email,
+                'phone' => $_POST['phone'] ?? '',
+                'department' => $_POST['department'] ?? '',
+                'position' => $_POST['position'] ?? '',
+                'designation' => $_POST['designation'] ?? '',
+                'hire_date' => $_POST['hire_date'] ?? '',
+                'salary' => $_POST['salary'] ?? 0,
+                'status' => $_POST['status'] ?? 'active',
+                'nin' => $_POST['nin'] ?? '',
+                'account_number' => $_POST['account_number'] ?? '',
+                'bank_name' => $_POST['bank_name'] ?? '',
+                'tin' => $_POST['tin'] ?? '',
+                'pfa' => $_POST['pfa'] ?? '',
+            ]);
+            $this->userModel->updateUserByEmployeeId($employeeId, [
+                'name' => trim((string)($_POST['first_name'] ?? '') . ' ' . (string)($_POST['last_name'] ?? '')),
+                'email' => $email,
+            ], 'Employee profile updated');
+            $this->employeeModel->saveCustomFieldValues($employeeId, (array)($_POST['custom_fields'] ?? []));
+            $_SESSION['employee_flash'] = 'Employee details updated successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['employee_flash'] = 'Unable to update employee: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/employees/view?id=' . $employeeId);
+    }
+
+    public function addEmployeeCustomField(): void
+    {
+        $this->requireCompanyModule('employees');
+        $employeeId = (int)($_POST['employee_id'] ?? 0);
+        $employee = $employeeId > 0 ? $this->employeeModel->getEmployeeById($employeeId) : null;
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || ($employeeId > 0 && !$employee)) {
+            $_SESSION['employee_flash'] = 'Invalid employee data column request.';
+            $this->redirect('/management/employees');
+        }
+
+        try {
+            $fieldId = $this->employeeModel->createCustomField((string)($_POST['field_name'] ?? ''));
+            if ($employeeId > 0) {
+                $this->employeeModel->saveCustomFieldValue($employeeId, $fieldId, (string)($_POST['field_value'] ?? ''));
+            }
+            $_SESSION['employee_flash'] = 'Employee data column added successfully. Existing employees remain blank.';
+        } catch (Throwable $exception) {
+            $_SESSION['employee_flash'] = 'Unable to save employee data column: ' . $exception->getMessage();
+        }
+        $this->redirect($employeeId > 0 ? '/management/employees/view?id=' . $employeeId : '/management/employees');
+    }
+
+    public function deleteEmployeeCustomField(): void
+    {
+        $this->requireCompanyModule('employees');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $_SESSION['employee_flash'] = 'Invalid employee data column request.';
+            $this->redirect('/management/employees');
+        }
+
+        try {
+            $this->employeeModel->disableEmployeeColumn((string)($_POST['column_key'] ?? ''));
+            $_SESSION['employee_flash'] = 'Employee column disabled for the current company.';
+        } catch (Throwable $exception) {
+            $_SESSION['employee_flash'] = 'Unable to disable employee data column: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/employees');
+    }
+
     public function bulkEmployeeAction(): void
     {
         $this->requireCompanyModule('employees');
@@ -227,6 +365,10 @@ class ManagementController extends BaseController
         foreach ($employeeIds as $employeeId) {
             try {
                 if ($action === 'delete') {
+                    $employee = $this->employeeModel->getEmployeeById($employeeId);
+                    if ($employee) {
+                        $this->employeeModel->archiveEmployee($employee);
+                    }
                     $this->userModel->deleteUserByEmployeeId($employeeId);
                     $this->employeeModel->deleteEmployee($employeeId);
                 } elseif ($action === 'deactivate') {
@@ -246,6 +388,16 @@ class ManagementController extends BaseController
         $labels = ['delete' => 'deleted', 'deactivate' => 'deactivated', 'reactivate' => 'reactivated'];
         $_SESSION['employee_flash'] = $changed . ' employee(s) ' . ($labels[$action] ?? 'updated') . ' successfully.';
         $this->redirect('/management/employees');
+    }
+
+    public function archivedEmployees(): void
+    {
+        $this->requireCompanyModule('employees');
+        $this->view('management/employee_archive', [
+            'title' => 'Employee Archive',
+            'archivedEmployees' => $this->employeeModel->getArchivedEmployees(),
+            'disabledColumns' => $this->employeeModel->getDisabledColumns(),
+        ]);
     }
 
     private function handleEmployeePhotoUpload(?array $file): ?string
@@ -471,6 +623,36 @@ class ManagementController extends BaseController
     {
         $this->requireCompanyModule('procurement');
         $this->view('modules/index', ['title' => 'Procurement']);
+    }
+
+    public function requisition(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $this->view('requisition/index', [
+            'title' => 'Requisition',
+            'requisitions' => $this->requisitionModel->getAll(),
+        ]);
+    }
+
+    public function saveRequisition(): void
+    {
+        $this->requireCompanyModule('requisition');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/requisition');
+        }
+
+        try {
+            $userId = (int)($_SESSION['user']['id'] ?? 0);
+            $this->requisitionModel->create(
+                $_POST,
+                (array)($_POST['items'] ?? []),
+                $userId > 0 ? $userId : null
+            );
+            $_SESSION['requisition_flash'] = 'Requisition submitted successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['requisition_flash'] = 'Unable to submit requisition: ' . $exception->getMessage();
+        }
+        $this->redirect('/requisition');
     }
 
     public function sales(): void

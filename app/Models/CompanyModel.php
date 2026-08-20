@@ -34,6 +34,7 @@ class CompanyModel extends Model
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )'
         );
+        $this->query('ALTER TABLE companies ADD COLUMN IF NOT EXISTS created_at DATETIME DEFAULT CURRENT_TIMESTAMP AFTER is_active');
         $this->query(
             'CREATE TABLE IF NOT EXISTS company_modules (
                 company_id INT NOT NULL,
@@ -42,6 +43,7 @@ class CompanyModel extends Model
                 FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
             )'
         );
+        $this->query("INSERT IGNORE INTO company_modules (company_id, module_key) SELECT id, 'requisition' FROM companies WHERE is_active = 1");
 
         $this->query(
             'INSERT INTO companies (id, company_name, logo_path, theme_color)
@@ -76,13 +78,35 @@ class CompanyModel extends Model
         ];
     }
 
-    public function getCompanies(): array
+    public function getCompanies(bool $includeInactive = false): array
     {
-        $companies = $this->query('SELECT * FROM companies WHERE is_active = 1 ORDER BY company_name ASC')->fetchAll();
+        $sql = $includeInactive
+            ? 'SELECT * FROM companies ORDER BY company_name ASC'
+            : 'SELECT * FROM companies WHERE is_active = 1 ORDER BY company_name ASC';
+        $companies = $this->query($sql)->fetchAll();
         foreach ($companies as &$company) {
             $company['module_access'] = $this->getModuleAccess((int)$company['id']);
         }
         return $companies;
+    }
+
+    public function isCompanyActive(int $companyId): bool
+    {
+        if ($companyId <= 0) {
+            return true;
+        }
+        $stmt = $this->query('SELECT is_active FROM companies WHERE id = ? LIMIT 1', [$companyId]);
+        $row = $stmt->fetch();
+        return $row !== false && (int)$row['is_active'] === 1;
+    }
+
+    public function setCompanyActive(int $companyId, bool $active): void
+    {
+        $exists = $this->query('SELECT 1 FROM companies WHERE id = ? LIMIT 1', [$companyId])->fetchColumn();
+        if (!$exists) {
+            throw new InvalidArgumentException('The company could not be found.');
+        }
+        $this->query('UPDATE companies SET is_active = ? WHERE id = ?', [$active ? 1 : 0, $companyId]);
     }
 
     public static function availableModules(): array
@@ -94,6 +118,7 @@ class CompanyModel extends Model
             'inventory' => 'Inventory',
             'accounting' => 'Accounting and Payroll',
             'procurement' => 'Procurement',
+            'requisition' => 'Requisition',
             'projects' => 'Projects',
             'reports' => 'Reports',
         ];

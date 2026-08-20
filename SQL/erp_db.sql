@@ -24,6 +24,55 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `requisitions`
+--
+
+CREATE TABLE `requisitions` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `requested_by` int(11) DEFAULT NULL,
+  `requisition_date` date NOT NULL,
+  `title` varchar(150) NOT NULL,
+  `trade` varchar(100) DEFAULT NULL,
+  `supplier` varchar(150) DEFAULT NULL,
+  `supplier_address` varchar(255) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `item_code` varchar(80) DEFAULT NULL,
+  `unit` varchar(50) DEFAULT NULL,
+  `quantity_required` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `quantity_in_stock` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `quantity_to_purchase` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `price` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `value` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `requisition_items`
+--
+
+CREATE TABLE `requisition_items` (
+  `id` int(11) NOT NULL,
+  `requisition_id` int(11) NOT NULL,
+  `description` text DEFAULT NULL,
+  `item_code` varchar(80) DEFAULT NULL,
+  `unit` varchar(50) DEFAULT NULL,
+  `quantity_required` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `quantity_in_stock` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `quantity_to_purchase` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `price` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `value` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `accounts`
 --
 
@@ -107,6 +156,22 @@ INSERT INTO `company_settings` (`id`, `company_name`, `logo_path`, `theme_color`
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `companies`
+--
+
+CREATE TABLE `companies` (
+  `id` int(11) NOT NULL,
+  `company_name` varchar(150) NOT NULL,
+  `logo_path` varchar(255) DEFAULT NULL,
+  `theme_color` char(7) NOT NULL DEFAULT '#1d4ed8',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `customers`
 --
 
@@ -181,7 +246,82 @@ CREATE TABLE `employees` (
   `salary` decimal(12,2) NOT NULL DEFAULT 0.00,
   `status` enum('active','inactive','terminated') DEFAULT 'active',
   `profile_picture` varchar(255) DEFAULT NULL,
+  `nin` varchar(50) DEFAULT NULL,
+  `account_number` varchar(50) DEFAULT NULL,
+  `bank_name` varchar(150) DEFAULT NULL,
+  `tin` varchar(50) DEFAULT NULL,
+  `pfa` varchar(150) DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `employee_custom_fields`
+--
+
+CREATE TABLE `employee_custom_fields` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `field_name` varchar(100) NOT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  UNIQUE KEY `unique_company_field` (`company_id`,`field_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `employee_custom_field_values`
+--
+
+CREATE TABLE `employee_custom_field_values` (
+  `id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `field_id` int(11) NOT NULL,
+  `field_value` text DEFAULT NULL,
+  UNIQUE KEY `unique_employee_field` (`employee_id`,`field_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `employee_disabled_columns`
+--
+
+CREATE TABLE `employee_disabled_columns` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `column_key` varchar(100) NOT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  UNIQUE KEY `unique_company_column` (`company_id`,`column_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `employee_archive`
+--
+
+CREATE TABLE `employee_archive` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `employee_id` int(11) NOT NULL,
+  `employee_data` longtext NOT NULL,
+  `deleted_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `employee_disabled_columns`
+--
+
+CREATE TABLE `employee_disabled_columns` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `column_key` varchar(100) NOT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  UNIQUE KEY `unique_company_column` (`company_id`,`column_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------

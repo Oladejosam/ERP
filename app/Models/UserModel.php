@@ -33,10 +33,13 @@ class UserModel extends Model
         return trim(strtolower($email));
     }
 
-    public function authenticate(string $email, string $password): ?array
+    public function authenticate(string $email, string $password, int $companyId): ?array
     {
         $email = $this->normalizeEmail($email);
-        $stmt = $this->query('SELECT * FROM users WHERE email = ? LIMIT 1', [$email]);
+        $stmt = $this->query(
+            'SELECT u.*, e.status AS employee_status, e.company_id AS employee_company_id FROM users u LEFT JOIN employees e ON e.id = u.employee_id INNER JOIN companies c ON c.id = ? AND c.is_active = 1 WHERE u.email = ? AND (u.employee_id IS NULL OR (e.id IS NOT NULL AND e.status = "active" AND e.company_id = c.id)) LIMIT 1',
+            [$companyId, $email]
+        );
         $user = $stmt->fetch();
         if ($user) {
             $storedHash = (string)($user['password_hash'] ?? '');
@@ -218,6 +221,34 @@ class UserModel extends Model
             $created++;
         }
 
+        return $created;
+    }
+    public function populateUsersFromEmployees(): int
+    {
+        $roleModel = new RoleModel();
+        $staffRoleId = $roleModel->getRoleIdByName('Staff');
+        if ($staffRoleId === null) {
+            $staffRoleId = $roleModel->createRoleIfMissing('Staff', 'Standard staff account');
+        }
+
+        $employees = $this->query('SELECT id, first_name, last_name, email FROM employees WHERE email IS NOT NULL AND email <> ""')->fetchAll();
+        $created = 0;
+        foreach ($employees as $employee) {
+            $email = $this->normalizeEmail((string)$employee['email']);
+            if ($this->getUserByEmail($email) !== null) {
+                continue;
+            }
+
+            $name = trim((string)$employee['first_name'] . ' ' . (string)$employee['last_name']);
+            $this->createUser([
+                'name' => $name !== '' ? $name : 'Employee ' . (int)$employee['id'],
+                'email' => $email,
+                'password' => 'Welcome123!',
+                'role_id' => $staffRoleId,
+                'employee_id' => (int)$employee['id'],
+            ]);
+            $created++;
+        }
         return $created;
     }
 
