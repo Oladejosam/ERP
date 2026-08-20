@@ -24,6 +24,20 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `departments`
+--
+
+CREATE TABLE `departments` (
+  `id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  UNIQUE KEY `unique_company_department` (`company_id`,`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `requisitions`
 --
 
@@ -248,6 +262,7 @@ CREATE TABLE `employees` (
   `profile_picture` varchar(255) DEFAULT NULL,
   `nin` varchar(50) DEFAULT NULL,
   `account_number` varchar(50) DEFAULT NULL,
+  `account_name` varchar(150) DEFAULT NULL,
   `bank_name` varchar(150) DEFAULT NULL,
   `tin` varchar(50) DEFAULT NULL,
   `pfa` varchar(150) DEFAULT NULL,

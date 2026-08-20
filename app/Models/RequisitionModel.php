@@ -37,6 +37,17 @@ class RequisitionModel extends Model
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )'
         );
+        $columns = [
+            'requisition_date' => 'DATE NULL', 'trade' => 'VARCHAR(100) NULL', 'supplier' => 'VARCHAR(150) NULL',
+            'supplier_address' => 'VARCHAR(255) NULL', 'item_code' => 'VARCHAR(80) NULL', 'unit' => 'VARCHAR(50) NULL',
+            'quantity_required' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00', 'quantity_in_stock' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00',
+            'quantity_to_purchase' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00', 'price' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00',
+            'value' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00',
+        ];
+        foreach ($columns as $column => $definition) {
+            $this->query('ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS ' . $column . ' ' . $definition);
+        }
+        $this->query('UPDATE requisitions SET requisition_date = COALESCE(requisition_date, DATE(created_at)) WHERE requisition_date IS NULL');
         $this->query(
             'CREATE TABLE IF NOT EXISTS requisition_items (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -52,17 +63,6 @@ class RequisitionModel extends Model
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )'
         );
-        $columns = [
-            'requisition_date' => 'DATE NULL', 'trade' => 'VARCHAR(100) NULL', 'supplier' => 'VARCHAR(150) NULL',
-            'supplier_address' => 'VARCHAR(255) NULL', 'item_code' => 'VARCHAR(80) NULL', 'unit' => 'VARCHAR(50) NULL',
-            'quantity_required' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00', 'quantity_in_stock' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00',
-            'quantity_to_purchase' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00', 'price' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00',
-            'value' => 'DECIMAL(12,2) NOT NULL DEFAULT 0.00',
-        ];
-        foreach ($columns as $column => $definition) {
-            $this->query('ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS ' . $column . ' ' . $definition);
-        }
-        $this->query('UPDATE requisitions SET requisition_date = COALESCE(requisition_date, DATE(created_at)) WHERE requisition_date IS NULL');
     }
 
     public function getAll(): array
@@ -73,54 +73,48 @@ class RequisitionModel extends Model
         );
         $requisitions = $stmt->fetchAll();
         foreach ($requisitions as &$requisition) {
-            $itemStmt = $this->query('SELECT * FROM requisition_items WHERE requisition_id = ? ORDER BY id ASC', [(int)$requisition['id']]);
-            $requisition['items'] = $itemStmt->fetchAll();
+            $items = $this->query('SELECT * FROM requisition_items WHERE requisition_id = ? ORDER BY id ASC', [(int)$requisition['id']])->fetchAll();
+            $requisition['items'] = $items;
         }
         return $requisitions;
     }
 
-    public function create(array $data, array $items, ?int $requestedBy): int
+    public function create(array $data, ?int $requestedBy): int
     {
         $title = trim((string)($data['project_title'] ?? ''));
         if ($title === '') {
             throw new InvalidArgumentException('A project title is required.');
         }
-        $cleanItems = [];
-        $totalValue = 0.0;
-        foreach ($items as $item) {
-            $quantityToPurchase = max(0, (float)($item['quantity_to_purchase'] ?? 0));
-            $price = max(0, (float)($item['price'] ?? 0));
-            if (trim((string)($item['description'] ?? '')) === '' && $quantityToPurchase <= 0 && $price <= 0) {
-                continue;
-            }
-            $value = $quantityToPurchase * $price;
-            $totalValue += $value;
-            $cleanItems[] = [$item, $quantityToPurchase, $price, $value];
-        }
-        if ($cleanItems === []) {
+        $items = (array)($data['items'] ?? []);
+        if ($items === []) {
             throw new InvalidArgumentException('Add at least one requested item.');
         }
-
         $this->db->beginTransaction();
         try {
             $this->query(
-                'INSERT INTO requisitions (company_id, requested_by, requisition_date, title, trade, supplier, supplier_address, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [$this->currentCompanyId(), $requestedBy, $data['date'] ?: date('Y-m-d'), $title, trim((string)($data['trade'] ?? '')) ?: null, trim((string)($data['supplier'] ?? '')) ?: null, trim((string)($data['supplier_address'] ?? '')) ?: null, number_format($totalValue, 2, '.', '')]
+                'INSERT INTO requisitions (company_id, requested_by, requisition_date, title, trade, supplier, supplier_address, amount) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
+                [$this->currentCompanyId(), $requestedBy, $data['date'] ?: date('Y-m-d'), $title, trim((string)($data['trade'] ?? '')) ?: null, trim((string)($data['supplier'] ?? '')) ?: null, trim((string)($data['supplier_address'] ?? '')) ?: null]
             );
             $requisitionId = (int)$this->db->lastInsertId();
-            foreach ($cleanItems as [$item, $quantityToPurchase, $price, $value]) {
+            $total = 0.0;
+            foreach ($items as $item) {
+                $quantityToPurchase = max(0, (float)($item['quantity_to_purchase'] ?? 0));
+                $price = max(0, (float)($item['price'] ?? 0));
+                $value = $quantityToPurchase * $price;
+                $total += $value;
                 $this->query(
                     'INSERT INTO requisition_items (requisition_id, description, item_code, unit, quantity_required, quantity_in_stock, quantity_to_purchase, price, value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     [$requisitionId, trim((string)($item['description'] ?? '')) ?: null, trim((string)($item['code'] ?? '')) ?: null, trim((string)($item['unit'] ?? '')) ?: null, max(0, (float)($item['quantity_required'] ?? 0)), max(0, (float)($item['quantity_in_stock'] ?? 0)), $quantityToPurchase, $price, number_format($value, 2, '.', '')]
                 );
             }
+            $this->query('UPDATE requisitions SET amount = ?, value = ? WHERE id = ?', [number_format($total, 2, '.', ''), number_format($total, 2, '.', ''), $requisitionId]);
             $this->db->commit();
-            return $requisitionId;
         } catch (Throwable $exception) {
             if ($this->db->inTransaction()) {
                 $this->db->rollBack();
             }
             throw $exception;
         }
+        return $requisitionId;
     }
 }

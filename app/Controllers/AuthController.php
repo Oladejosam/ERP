@@ -173,6 +173,16 @@ class AuthController extends Controller
         $this->redirect('/login');
     }
 
+    public function stopImpersonation(): void
+    {
+        if (!empty($_SESSION['impersonation_admin_user'])) {
+            $_SESSION['user'] = $_SESSION['impersonation_admin_user'];
+            $_SESSION['selected_company_id'] = (int)($_SESSION['impersonation_company_id'] ?? ($_SESSION['selected_company_id'] ?? 1));
+            unset($_SESSION['impersonation_admin_user'], $_SESSION['impersonation_company_id']);
+        }
+        $this->redirect('/management/employees');
+    }
+
     private function ensureDefaultRoles(RoleModel $roleModel): void
     {
         $defaultRoles = RoleModel::defaultRoleNames();

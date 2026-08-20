@@ -31,6 +31,7 @@ class EmployeeModel extends Model
                 profile_picture VARCHAR(255) NULL,
                 nin VARCHAR(50) NULL,
                 account_number VARCHAR(50) NULL,
+                account_name VARCHAR(150) NULL,
                 bank_name VARCHAR(150) NULL,
                 tin VARCHAR(50) NULL,
                 pfa VARCHAR(150) NULL,
@@ -41,7 +42,8 @@ class EmployeeModel extends Model
         $this->query('ALTER TABLE employees ADD COLUMN IF NOT EXISTS profile_picture VARCHAR(255) NULL AFTER status');
         $this->query('ALTER TABLE employees ADD COLUMN IF NOT EXISTS nin VARCHAR(50) NULL AFTER profile_picture');
         $this->query('ALTER TABLE employees ADD COLUMN IF NOT EXISTS account_number VARCHAR(50) NULL AFTER nin');
-        $this->query('ALTER TABLE employees ADD COLUMN IF NOT EXISTS bank_name VARCHAR(150) NULL AFTER account_number');
+        $this->query('ALTER TABLE employees ADD COLUMN IF NOT EXISTS account_name VARCHAR(150) NULL AFTER account_number');
+        $this->query('ALTER TABLE employees ADD COLUMN IF NOT EXISTS bank_name VARCHAR(150) NULL AFTER account_name');
         $this->query('ALTER TABLE employees ADD COLUMN IF NOT EXISTS tin VARCHAR(50) NULL AFTER bank_name');
         $this->query('ALTER TABLE employees ADD COLUMN IF NOT EXISTS pfa VARCHAR(150) NULL AFTER tin');
         $this->query(
@@ -72,6 +74,12 @@ class EmployeeModel extends Model
             )'
         );
         $this->query(
+            "UPDATE employees e INNER JOIN employee_custom_field_values v ON v.employee_id = e.id INNER JOIN employee_custom_fields f ON f.id = v.field_id AND f.company_id = e.company_id SET e.account_name = v.field_value WHERE LOWER(f.field_name) = 'account name' AND (e.account_name IS NULL OR e.account_name = '')"
+        );
+        $this->query(
+            "INSERT IGNORE INTO employee_disabled_columns (company_id, column_key) SELECT company_id, CONCAT('custom_', id) FROM employee_custom_fields WHERE LOWER(field_name) = 'account name'"
+        );
+        $this->query(
             'CREATE TABLE IF NOT EXISTS employee_archive (
                 id INT PRIMARY KEY AUTO_INCREMENT,
                 company_id INT NOT NULL,
@@ -80,6 +88,16 @@ class EmployeeModel extends Model
                 deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )'
         );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS departments (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_company_department (company_id, name)
+            )'
+        );
+        $this->query('INSERT IGNORE INTO departments (company_id, name) SELECT DISTINCT company_id, department FROM employees WHERE department IS NOT NULL AND department <> ""');
     }
 
     public function getEmployees(): array
@@ -90,8 +108,31 @@ class EmployeeModel extends Model
 
     public function getDepartments(): array
     {
-        $stmt = $this->query('SELECT DISTINCT department AS name FROM employees WHERE company_id = ? AND department IS NOT NULL AND department <> "" ORDER BY department ASC', [$this->currentCompanyId()]);
+        $stmt = $this->query('SELECT id, name FROM departments WHERE company_id = ? ORDER BY name ASC', [$this->currentCompanyId()]);
         return $stmt->fetchAll();
+    }
+
+    public function createDepartment(string $name): void
+    {
+        $name = trim($name);
+        if ($name === '' || strlen($name) > 100) {
+            throw new InvalidArgumentException('A department name between 1 and 100 characters is required.');
+        }
+        $this->query('INSERT INTO departments (company_id, name) VALUES (?, ?)', [$this->currentCompanyId(), $name]);
+    }
+
+    public function deleteDepartment(int $departmentId): void
+    {
+        $stmt = $this->query('SELECT name FROM departments WHERE id = ? AND company_id = ? LIMIT 1', [$departmentId, $this->currentCompanyId()]);
+        $department = $stmt->fetch();
+        if (!$department) {
+            throw new InvalidArgumentException('Department not found.');
+        }
+        $assigned = $this->query('SELECT COUNT(*) FROM employees WHERE company_id = ? AND department = ?', [$this->currentCompanyId(), $department['name']])->fetchColumn();
+        if ((int)$assigned > 0) {
+            throw new InvalidArgumentException('This department still has assigned employees. Reassign them before deleting it.');
+        }
+        $this->query('DELETE FROM departments WHERE id = ? AND company_id = ?', [$departmentId, $this->currentCompanyId()]);
     }
 
     public function getEmployeeById(int $id): ?array
@@ -150,7 +191,7 @@ class EmployeeModel extends Model
             ['key' => 'hire_date', 'label' => 'Hire Date'], ['key' => 'salary', 'label' => 'Salary'],
             ['key' => 'status', 'label' => 'Status'], ['key' => 'profile_picture', 'label' => 'Profile Picture'],
             ['key' => 'nin', 'label' => 'NIN'], ['key' => 'account_number', 'label' => 'Account Number'],
-            ['key' => 'bank_name', 'label' => 'Bank Name'], ['key' => 'tin', 'label' => 'TIN'], ['key' => 'pfa', 'label' => 'PFA'],
+            ['key' => 'account_name', 'label' => 'Account Name'], ['key' => 'bank_name', 'label' => 'Bank Name'], ['key' => 'tin', 'label' => 'TIN'], ['key' => 'pfa', 'label' => 'PFA'],
         ];
         foreach ($this->getCustomFields() as $field) {
             $columns[] = ['key' => 'custom_' . (int)$field['id'], 'label' => $field['field_name']];
@@ -165,7 +206,7 @@ class EmployeeModel extends Model
             'employee_code' => 'Employee Code', 'first_name' => 'First Name', 'last_name' => 'Last Name',
             'email' => 'Email', 'phone' => 'Phone', 'department' => 'Department', 'position' => 'Position',
             'designation' => 'Designation', 'hire_date' => 'Hire Date', 'salary' => 'Salary', 'status' => 'Status',
-            'profile_picture' => 'Profile Picture', 'nin' => 'NIN', 'account_number' => 'Account Number',
+            'profile_picture' => 'Profile Picture', 'nin' => 'NIN', 'account_number' => 'Account Number', 'account_name' => 'Account Name',
             'bank_name' => 'Bank Name', 'tin' => 'TIN', 'pfa' => 'PFA',
         ];
         $columns = [];
@@ -279,6 +320,7 @@ class EmployeeModel extends Model
         $profilePicture = trim((string)($data['profile_picture'] ?? ''));
         $nin = trim((string)($data['nin'] ?? ''));
         $accountNumber = trim((string)($data['account_number'] ?? ''));
+        $accountName = trim((string)($data['account_name'] ?? ''));
         $bankName = trim((string)($data['bank_name'] ?? ''));
         $tin = trim((string)($data['tin'] ?? ''));
         $pfa = trim((string)($data['pfa'] ?? ''));
@@ -298,8 +340,8 @@ class EmployeeModel extends Model
         }
 
         $this->query(
-            'INSERT INTO employees (company_id, employee_code, first_name, last_name, email, phone, department, position, designation, hire_date, salary, status, profile_picture, nin, account_number, bank_name, tin, pfa, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-            [$this->currentCompanyId(), $employeeCode, $firstName, $lastName, $email, $phone, $department, $position, $designation !== '' ? $designation : null, $hireDate, number_format($salary, 2, '.', ''), $status, $profilePicture !== '' ? $profilePicture : null, $nin !== '' ? $nin : null, $accountNumber !== '' ? $accountNumber : null, $bankName !== '' ? $bankName : null, $tin !== '' ? $tin : null, $pfa !== '' ? $pfa : null]
+            'INSERT INTO employees (company_id, employee_code, first_name, last_name, email, phone, department, position, designation, hire_date, salary, status, profile_picture, nin, account_number, account_name, bank_name, tin, pfa, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+            [$this->currentCompanyId(), $employeeCode, $firstName, $lastName, $email, $phone, $department, $position, $designation !== '' ? $designation : null, $hireDate, number_format($salary, 2, '.', ''), $status, $profilePicture !== '' ? $profilePicture : null, $nin !== '' ? $nin : null, $accountNumber !== '' ? $accountNumber : null, $accountName !== '' ? $accountName : null, $bankName !== '' ? $bankName : null, $tin !== '' ? $tin : null, $pfa !== '' ? $pfa : null]
         );
 
         return (int)$this->db->lastInsertId();
@@ -325,7 +367,7 @@ class EmployeeModel extends Model
     public function updateEmployee(int $employeeId, array $data): void
     {
         $this->query(
-            'UPDATE employees SET employee_code = ?, first_name = ?, last_name = ?, email = ?, phone = ?, department = ?, position = ?, designation = ?, hire_date = ?, salary = ?, status = ?, nin = ?, account_number = ?, bank_name = ?, tin = ?, pfa = ? WHERE id = ? AND company_id = ?',
+            'UPDATE employees SET employee_code = ?, first_name = ?, last_name = ?, email = ?, phone = ?, department = ?, position = ?, designation = ?, hire_date = ?, salary = ?, status = ?, nin = ?, account_number = ?, account_name = ?, bank_name = ?, tin = ?, pfa = ? WHERE id = ? AND company_id = ?',
             [
                 trim((string)($data['employee_code'] ?? '')),
                 trim((string)($data['first_name'] ?? '')),
@@ -340,6 +382,7 @@ class EmployeeModel extends Model
                 in_array(($data['status'] ?? ''), ['active', 'inactive', 'terminated'], true) ? $data['status'] : 'active',
                 trim((string)($data['nin'] ?? '')) ?: null,
                 trim((string)($data['account_number'] ?? '')) ?: null,
+                trim((string)($data['account_name'] ?? '')) ?: null,
                 trim((string)($data['bank_name'] ?? '')) ?: null,
                 trim((string)($data['tin'] ?? '')) ?: null,
                 trim((string)($data['pfa'] ?? '')) ?: null,

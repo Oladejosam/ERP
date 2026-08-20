@@ -183,6 +183,7 @@ class ManagementController extends BaseController
             'status' => trim((string)($_POST['status'] ?? 'active')),
             'nin' => trim((string)($_POST['nin'] ?? '')),
             'account_number' => trim((string)($_POST['account_number'] ?? '')),
+            'account_name' => trim((string)($_POST['account_name'] ?? '')),
             'bank_name' => trim((string)($_POST['bank_name'] ?? '')),
             'tin' => trim((string)($_POST['tin'] ?? '')),
             'pfa' => trim((string)($_POST['pfa'] ?? '')),
@@ -248,6 +249,59 @@ class ManagementController extends BaseController
         $this->redirect('/management/employees/view?id=' . $employeeId);
     }
 
+    public function loginAsEmployee(): void
+    {
+        $this->requireAccess();
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (!in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+            $_SESSION['employee_flash'] = 'Only Super Admins can access an employee account without a password.';
+            $this->redirect('/management/employees');
+        }
+
+        $employeeId = (int)($_POST['employee_id'] ?? 0);
+        $employee = $this->employeeModel->getEmployeeById($employeeId);
+        $user = $employee ? $this->userModel->getUserByEmployeeId($employeeId) : null;
+        if (!$employee || !$user || strtolower((string)($employee['status'] ?? '')) !== 'active') {
+            $_SESSION['employee_flash'] = 'This employee cannot be opened because the account is missing or inactive.';
+            $this->redirect('/management/employees');
+        }
+
+        $_SESSION['impersonation_admin_user'] = $_SESSION['user'];
+        $_SESSION['impersonation_company_id'] = (int)($_SESSION['selected_company_id'] ?? 0);
+        $user['role_name'] = $this->roleModel->getRoleNameById((int)($user['role_id'] ?? 0));
+        $_SESSION['user'] = $user;
+        $this->redirect('/');
+    }
+
+    public function changeEmployeePassword(): void
+    {
+        $this->requireAccess();
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        $employeeId = (int)($_POST['employee_id'] ?? 0);
+        $employee = $this->employeeModel->getEmployeeById($employeeId);
+        if (!in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+            $_SESSION['employee_flash'] = 'Only Super Admins can change employee login passwords.';
+            $this->redirect('/management/employees');
+        }
+        if (!$employee) {
+            $_SESSION['employee_flash'] = 'Employee not found.';
+            $this->redirect('/management/employees');
+        }
+
+        $password = (string)($_POST['new_password'] ?? '');
+        $confirmation = (string)($_POST['confirm_password'] ?? '');
+        if (strlen($password) < 8) {
+            $_SESSION['employee_flash'] = 'The new password must be at least 8 characters.';
+        } elseif ($password !== $confirmation) {
+            $_SESSION['employee_flash'] = 'The password confirmation does not match.';
+        } elseif (!$this->userModel->updateUserByEmployeeId($employeeId, ['password' => $password], 'Employee login password changed')) {
+            $_SESSION['employee_flash'] = 'No linked login account was found for this employee.';
+        } else {
+            $_SESSION['employee_flash'] = 'Employee login password changed successfully.';
+        }
+        $this->redirect('/management/employees/view?id=' . $employeeId);
+    }
+
     public function populateEmployeeUsers(): void
     {
         $this->requireCompanyModule('employees');
@@ -288,6 +342,7 @@ class ManagementController extends BaseController
                 'status' => $_POST['status'] ?? 'active',
                 'nin' => $_POST['nin'] ?? '',
                 'account_number' => $_POST['account_number'] ?? '',
+                'account_name' => $_POST['account_name'] ?? '',
                 'bank_name' => $_POST['bank_name'] ?? '',
                 'tin' => $_POST['tin'] ?? '',
                 'pfa' => $_POST['pfa'] ?? '',
@@ -560,8 +615,16 @@ class ManagementController extends BaseController
                     'phone' => $value('phone'),
                     'department' => $value('department'),
                     'position' => $value('position'),
+                    'designation' => $value('designation'),
                     'hire_date' => $hireDate,
                     'salary' => (float)$value('salary'),
+                    'status' => $value('status') !== '' ? $value('status') : 'active',
+                    'nin' => $value('nin'),
+                    'account_number' => $value('account_number'),
+                    'account_name' => $value('account_name'),
+                    'bank_name' => $value('bank_name'),
+                    'tin' => $value('tin'),
+                    'pfa' => $value('pfa'),
                 ]);
 
                 if ($this->userModel->getUserByEmail($email) === null) {
@@ -616,7 +679,31 @@ class ManagementController extends BaseController
     public function hr(): void
     {
         $this->requireCompanyModule('hr');
-        $this->view('management/hr', ['title' => 'Human Resources']);
+        $this->view('management/hr', ['title' => 'Human Resources', 'departments' => $this->employeeModel->getDepartments()]);
+    }
+
+    public function saveDepartment(): void
+    {
+        $this->requireCompanyModule('hr');
+        try {
+            $this->employeeModel->createDepartment((string)($_POST['name'] ?? ''));
+            $_SESSION['hr_flash'] = 'Department created successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['hr_flash'] = 'Unable to create department: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/hr');
+    }
+
+    public function deleteDepartment(): void
+    {
+        $this->requireCompanyModule('hr');
+        try {
+            $this->employeeModel->deleteDepartment((int)($_POST['department_id'] ?? 0));
+            $_SESSION['hr_flash'] = 'Department deleted successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['hr_flash'] = 'Unable to delete department: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/hr');
     }
 
     public function procurement(): void
@@ -645,7 +732,6 @@ class ManagementController extends BaseController
             $userId = (int)($_SESSION['user']['id'] ?? 0);
             $this->requisitionModel->create(
                 $_POST,
-                (array)($_POST['items'] ?? []),
                 $userId > 0 ? $userId : null
             );
             $_SESSION['requisition_flash'] = 'Requisition submitted successfully.';

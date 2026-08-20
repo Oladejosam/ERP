@@ -56,6 +56,9 @@ function isActiveNav(string $href, string $currentPath): bool {
             <?php endif; ?>
         </a>
         <div class="ms-auto d-flex align-items-center gap-3 text-white">
+            <?php if (!empty($_SESSION['impersonation_admin_user'])): ?>
+                <a class="btn btn-warning btn-sm" href="/ERP/public/stop-impersonation">Return to Super Admin</a>
+            <?php endif; ?>
             <?php if ($isSuperAdmin && count($availableCompanies) > 1): ?>
                 <form method="post" action="/ERP/public/setup/select-company" class="d-flex align-items-center">
                     <label class="visually-hidden" for="headerCompanySelect">Company</label>

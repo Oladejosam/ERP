@@ -200,14 +200,14 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Department</label>
-                            <input class="form-control" name="department" list="departmentOptions" required>
-                            <datalist id="departmentOptions">
+                            <select class="form-select" name="department" required>
+                                <option value="">Select department</option>
                                 <?php if (!empty($departments) && is_array($departments)): ?>
                                     <?php foreach ($departments as $department): ?>
-                                        <option value="<?php echo htmlspecialchars($department['name']); ?>">
+                                        <option value="<?php echo htmlspecialchars($department['name']); ?>"><?php echo htmlspecialchars($department['name']); ?></option>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
-                            </datalist>
+                            </select>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Position</label>
@@ -244,6 +244,10 @@
                         <?php if (isset($visibleColumnKeys['account_number'])): ?><div class="col-md-6">
                             <label class="form-label">Account Number</label>
                             <input class="form-control" name="account_number" maxlength="50">
+                        </div><?php endif; ?>
+                        <?php if (isset($visibleColumnKeys['account_name'])): ?><div class="col-md-6">
+                            <label class="form-label">Account Name</label>
+                            <input class="form-control" name="account_name" maxlength="150">
                         </div><?php endif; ?>
                         <?php if (isset($visibleColumnKeys['bank_name'])): ?><div class="col-md-6">
                             <label class="form-label">Bank Name</label>

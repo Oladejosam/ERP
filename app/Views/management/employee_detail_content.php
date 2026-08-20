@@ -39,6 +39,24 @@
                             <span class="badge bg-<?php echo strtolower((string)($employee['status'] ?? 'active')) === 'active' ? 'success' : 'secondary'; ?> mt-3">
                                 <?php echo htmlspecialchars(ucfirst((string)($employee['status'] ?? 'active'))); ?>
                             </span>
+                            <?php $currentRole = strtolower(trim((string)($_SESSION['user']['role_name'] ?? ''))); ?>
+                            <?php if (in_array($currentRole, ['super admin', 'superadministrator', 'super administrator'], true) && strtolower((string)($employee['status'] ?? '')) === 'active'): ?>
+                                <form action="/ERP/public/management/employees/login-as" method="post" class="mt-3">
+                                    <input type="hidden" name="employee_id" value="<?php echo (int)$employee['id']; ?>">
+                                    <button type="submit" class="btn btn-outline-dark w-100" onclick="return confirm('Open this employee account without entering a password?');">Login as Employee</button>
+                                </form>
+                            <?php endif; ?>
+                            <?php if (in_array($currentRole, ['super admin', 'superadministrator', 'super administrator'], true)): ?>
+                                <form action="/ERP/public/management/employees/change-password" method="post" class="text-start border-top mt-3 pt-3">
+                                    <input type="hidden" name="employee_id" value="<?php echo (int)$employee['id']; ?>">
+                                    <div class="small fw-semibold mb-2">Change login password</div>
+                                    <label class="form-label small" for="newEmployeePassword">New password</label>
+                                    <input id="newEmployeePassword" type="password" class="form-control form-control-sm mb-2" name="new_password" minlength="8" required>
+                                    <label class="form-label small" for="confirmEmployeePassword">Confirm password</label>
+                                    <input id="confirmEmployeePassword" type="password" class="form-control form-control-sm" name="confirm_password" minlength="8" required>
+                                    <button type="submit" class="btn btn-sm btn-outline-warning w-100 mt-2">Change Password</button>
+                                </form>
+                            <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -52,7 +70,7 @@
                         'employee_code' => 'Employee Code', 'first_name' => 'First Name', 'last_name' => 'Last Name',
                         'email' => 'Email', 'phone' => 'Phone', 'department' => 'Department', 'position' => 'Position',
                         'designation' => 'Designation', 'hire_date' => 'Hire Date', 'salary' => 'Salary', 'nin' => 'NIN',
-                        'account_number' => 'Account Number', 'bank_name' => 'Bank Name', 'tin' => 'TIN', 'pfa' => 'PFA',
+                        'account_number' => 'Account Number', 'account_name' => 'Account Name', 'bank_name' => 'Bank Name', 'tin' => 'TIN', 'pfa' => 'PFA',
                     ];
                     foreach ($editableFields as $fieldName => $fieldLabel):
                         if (!isset($visibleColumnKeys[$fieldName])) {
