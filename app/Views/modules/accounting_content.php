@@ -11,11 +11,11 @@
                 <form method="post" action="/ERP/public/modules/accounting/upload" enctype="multipart/form-data" class="d-flex gap-2 align-items-center m-0">
                     <label class="btn btn-outline-primary btn-sm mb-0">
                         Choose File
-                        <input type="file" name="payroll_file" accept=".csv,.xlsx,.xls" hidden required>
+                        <input type="file" name="payroll_file" accept=".csv" hidden required>
                     </label>
                     <button type="submit" class="btn btn-secondary btn-sm">Upload</button>
                 </form>
-                <a href="/ERP/public/payroll_template.xls" class="btn btn-info btn-sm" target="_blank">Download Template</a>
+                <a href="/ERP/public/modules/accounting/template" class="btn btn-info btn-sm">Download Template</a>
                 <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPayrollModal">New Entry</button>
             </div>
         </div>

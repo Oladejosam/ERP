@@ -31,8 +31,61 @@ CREATE TABLE `departments` (
   `id` int(11) NOT NULL,
   `company_id` int(11) NOT NULL,
   `name` varchar(100) NOT NULL,
+  `role_id` int(11) DEFAULT NULL,
+  `head_employee_id` int(11) DEFAULT NULL,
+  `head_title` varchar(100) DEFAULT NULL,
+  `head_role_id` int(11) DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
   UNIQUE KEY `unique_company_department` (`company_id`,`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `department_roles` (
+  `department_id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `role_id` int(11) NOT NULL,
+  PRIMARY KEY (`department_id`,`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `management_roles`
+--
+
+CREATE TABLE `management_roles` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) DEFAULT NULL,
+  `name` varchar(100) NOT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  UNIQUE KEY `unique_management_role_company` (`company_id`,`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `workflow_levels`
+--
+
+CREATE TABLE `workflow_levels` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  UNIQUE KEY `unique_workflow_level_company` (`company_id`,`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `workflow_role_links`
+--
+
+CREATE TABLE `workflow_role_links` (
+  `company_id` int(11) NOT NULL,
+  `role_id` int(11) NOT NULL,
+  `parent_role_id` int(11) DEFAULT NULL,
+  `level_id` int(11) DEFAULT NULL,
+  PRIMARY KEY (`company_id`,`role_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -82,6 +135,23 @@ CREATE TABLE `requisition_items` (
   `price` decimal(12,2) NOT NULL DEFAULT 0.00,
   `value` decimal(12,2) NOT NULL DEFAULT 0.00,
   `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `requisition_participants` (
+  `requisition_id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  PRIMARY KEY (`requisition_id`,`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `requisition_messages` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `requisition_id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `message` text NOT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -873,9 +943,11 @@ CREATE TABLE `recruitment_applications` (
 
 CREATE TABLE `roles` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `name` varchar(100) NOT NULL,
   `description` text DEFAULT NULL,
-  `created_at` datetime DEFAULT current_timestamp()
+  `created_at` datetime DEFAULT current_timestamp(),
+  UNIQUE KEY `unique_role_company_name` (`company_id`,`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -1006,6 +1078,7 @@ CREATE TABLE `transactions` (
 
 CREATE TABLE `users` (
   `id` int(11) NOT NULL,
+  `company_id` int(11) DEFAULT NULL,
   `name` varchar(150) NOT NULL,
   `email` varchar(150) NOT NULL,
   `password_hash` varchar(255) NOT NULL,
@@ -1403,7 +1476,7 @@ ALTER TABLE `transactions`
 --
 ALTER TABLE `users`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `email` (`email`),
+  ADD UNIQUE KEY `unique_user_company_email` (`company_id`,`email`),
   ADD KEY `idx_users_email` (`email`),
   ADD KEY `idx_users_role` (`role_id`);
 

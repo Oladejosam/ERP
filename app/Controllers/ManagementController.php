@@ -120,8 +120,54 @@ class ManagementController extends BaseController
             'departments' => $this->employeeModel->getDepartments(),
             'customFields' => $this->employeeModel->getCustomFields(),
             'employeeColumns' => $this->employeeModel->getEmployeeColumnOptions(),
+            'roles' => $this->roleModel->getRoles(),
             'search' => $search,
         ]);
+    }
+
+    public function createRole(): void
+    {
+        $this->requireCompanyModule('hr');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $_SESSION['hr_flash'] = 'Invalid role request.';
+            $this->redirect('/management/hr');
+        }
+
+        $name = trim((string)($_POST['name'] ?? ''));
+        $description = trim((string)($_POST['description'] ?? ''));
+        $submittedNames = preg_split('/\r\n|\r|\n/', (string)($_POST['name'] ?? '')) ?: [];
+        $names = [];
+        foreach ($submittedNames as $submittedName) {
+            $name = trim($submittedName);
+            if ($name !== '' && !in_array(strtolower($name), array_map('strtolower', $names), true)) {
+                $names[] = $name;
+            }
+        }
+        if ($names === []) {
+            $_SESSION['hr_flash'] = 'A role name is required.';
+            $this->redirect('/management/hr');
+        }
+
+        try {
+            $created = 0;
+            $existing = 0;
+            $companyRoles = $this->roleModel->getRoles();
+            $companyRoleNames = array_map(static fn (array $role): string => strtolower((string)$role['name']), $companyRoles);
+            foreach ($names as $name) {
+                if (in_array(strtolower($name), $companyRoleNames, true)) {
+                    $existing++;
+                    continue;
+                }
+                $this->roleModel->createCompanyRole($name, $description);
+                $companyRoleNames[] = strtolower($name);
+                $created++;
+            }
+            $_SESSION['hr_flash'] = 'Roles processed. Created: ' . $created . '; already existed: ' . $existing . '.';
+        } catch (Throwable $exception) {
+            $_SESSION['hr_flash'] = 'Unable to create role: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/hr');
     }
 
     public function viewEmployee(): void
@@ -679,17 +725,67 @@ class ManagementController extends BaseController
     public function hr(): void
     {
         $this->requireCompanyModule('hr');
-        $this->view('management/hr', ['title' => 'Human Resources', 'departments' => $this->employeeModel->getDepartments()]);
+        $this->view('management/hr', [
+            'title' => 'Human Resources',
+            'departments' => $this->employeeModel->getDepartments(),
+            'employees' => $this->employeeModel->getEmployees(),
+            'roles' => $this->roleModel->getRoles(),
+            'managementRoles' => $this->roleModel->getManagementRoles(),
+        ]);
+    }
+
+    public function deleteRole(): void
+    {
+        $this->requireCompanyModule('hr');
+        try {
+            $this->roleModel->deleteRole((int)($_POST['role_id'] ?? 0));
+            $_SESSION['hr_flash'] = 'Role deleted successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['hr_flash'] = 'Unable to delete role: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/hr');
+    }
+
+    public function deleteManagementRole(): void
+    {
+        $this->requireCompanyModule('hr');
+        try {
+            $this->roleModel->deleteManagementRole((int)($_POST['management_role_id'] ?? 0));
+            $_SESSION['hr_flash'] = 'Management role deleted successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['hr_flash'] = 'Unable to delete management role: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/hr');
     }
 
     public function saveDepartment(): void
     {
         $this->requireCompanyModule('hr');
         try {
-            $this->employeeModel->createDepartment((string)($_POST['name'] ?? ''));
+            $roleIds = (array)($_POST['role_ids'] ?? []);
+            $headRoleId = (int)($_POST['head_role_id'] ?? 0);
+            $headEmployeeId = (int)($_POST['head_employee_id'] ?? 0);
+            $headTitle = trim((string)($_POST['head_title'] ?? ''));
+            $this->employeeModel->createDepartment((string)($_POST['name'] ?? ''), $roleIds, $headRoleId > 0 ? $headRoleId : null, $headEmployeeId > 0 ? $headEmployeeId : null, $headTitle !== '' ? $headTitle : null);
             $_SESSION['hr_flash'] = 'Department created successfully.';
         } catch (Throwable $exception) {
             $_SESSION['hr_flash'] = 'Unable to create department: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/hr');
+    }
+
+    public function updateDepartmentAssignments(): void
+    {
+        $this->requireCompanyModule('hr');
+        try {
+            $roleIds = (array)($_POST['role_ids'] ?? []);
+            $headRoleId = (int)($_POST['head_role_id'] ?? 0);
+            $headEmployeeId = (int)($_POST['head_employee_id'] ?? 0);
+            $headTitle = trim((string)($_POST['head_title'] ?? ''));
+            $this->employeeModel->updateDepartmentAssignments((int)($_POST['department_id'] ?? 0), $roleIds, $headRoleId > 0 ? $headRoleId : null, $headEmployeeId > 0 ? $headEmployeeId : null, $headTitle !== '' ? $headTitle : null);
+            $_SESSION['hr_flash'] = 'Department assignments updated successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['hr_flash'] = 'Unable to update department assignments: ' . $exception->getMessage();
         }
         $this->redirect('/management/hr');
     }
@@ -718,6 +814,7 @@ class ManagementController extends BaseController
         $this->view('requisition/index', [
             'title' => 'Requisition',
             'requisitions' => $this->requisitionModel->getAll(),
+            'companyUsers' => $this->requisitionModel->getCompanyUsers(),
         ]);
     }
 
@@ -731,7 +828,7 @@ class ManagementController extends BaseController
         try {
             $userId = (int)($_SESSION['user']['id'] ?? 0);
             $this->requisitionModel->create(
-                $_POST,
+                array_merge($_POST, ['participant_ids' => (array)($_POST['participant_ids'] ?? [])]),
                 $userId > 0 ? $userId : null
             );
             $_SESSION['requisition_flash'] = 'Requisition submitted successfully.';
@@ -739,6 +836,73 @@ class ManagementController extends BaseController
             $_SESSION['requisition_flash'] = 'Unable to submit requisition: ' . $exception->getMessage();
         }
         $this->redirect('/requisition');
+    }
+
+    public function viewRequisition(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $requisition = $this->requisitionModel->getById((int)($_GET['id'] ?? 0));
+        if (!$requisition) {
+            $_SESSION['requisition_flash'] = 'Requisition not found.';
+            $this->redirect('/requisition');
+        }
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        $isSuperAdmin = in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true);
+        if (!$isSuperAdmin && !$this->requisitionModel->isParticipant((int)$requisition['id'], (int)($_SESSION['user']['id'] ?? 0))) {
+            $_SESSION['requisition_flash'] = 'You are not part of this requisition discussion.';
+            $this->redirect('/requisition');
+        }
+        $this->view('requisition/detail', ['title' => 'Requisition Discussion', 'requisition' => $requisition, 'companyUsers' => $this->requisitionModel->getCompanyUsers()]);
+    }
+
+    public function addRequisitionMessage(): void
+    {
+        $this->requireCompanyModule('requisition');
+        try {
+            $this->requisitionModel->addMessage((int)($_POST['requisition_id'] ?? 0), (int)($_SESSION['user']['id'] ?? 0), (string)($_POST['message'] ?? ''));
+            $_SESSION['requisition_flash'] = 'Message posted.';
+        } catch (Throwable $exception) {
+            $_SESSION['requisition_flash'] = 'Unable to post message: ' . $exception->getMessage();
+        }
+        $this->redirect('/requisition/view?id=' . (int)($_POST['requisition_id'] ?? 0));
+    }
+
+    public function requisitionMessages(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $requisitionId = (int)($_GET['id'] ?? 0);
+        if (!$this->requisitionModel->isParticipant($requisitionId, (int)($_SESSION['user']['id'] ?? 0))) {
+            $this->json(['error' => 'Not authorized.']);
+        }
+        $this->json([
+            'messages' => $this->requisitionModel->getMessages($requisitionId),
+        ]);
+    }
+
+    public function decideRequisition(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $requisitionId = (int)($_POST['requisition_id'] ?? 0);
+        try {
+            $this->requisitionModel->decide($requisitionId, (int)($_SESSION['user']['id'] ?? 0), (string)($_POST['decision'] ?? ''));
+            $_SESSION['requisition_flash'] = 'Requisition decision saved.';
+        } catch (Throwable $exception) {
+            $_SESSION['requisition_flash'] = 'Unable to save decision: ' . $exception->getMessage();
+        }
+        $this->redirect('/requisition/view?id=' . $requisitionId);
+    }
+
+    public function handoffRequisition(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $requisitionId = (int)($_POST['requisition_id'] ?? 0);
+        try {
+            $this->requisitionModel->handoff($requisitionId, (int)($_SESSION['user']['id'] ?? 0), (int)($_POST['next_user_id'] ?? 0), (string)($_POST['handoff_note'] ?? ''));
+            $_SESSION['requisition_flash'] = 'Requisition handed off successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['requisition_flash'] = 'Unable to hand off requisition: ' . $exception->getMessage();
+        }
+        $this->redirect('/requisition/view?id=' . $requisitionId);
     }
 
     public function sales(): void

@@ -1,3 +1,6 @@
-Employee Code	First Name	Last Name	Email	Phone	Department	Position	Hire Date	Salary	Role	Password
-EMP001	John	Doe	john.doe@example.com	08012345678	HR	HR Officer	2026-08-01	50000	Staff	password123
-EMP002	Jane	Smith	jane.smith@example.com	08023456789	Accounts	Accountant	2026-08-01	65000	Accountant	password123
+Employee Code	First Name	Last Name	Email	Phone	Department	Position	Designation	Hire Date	Salary	Status	NIN	Account Number	Account Name	Bank Name	TIN	PFA	Role	Password
+EMP001	Amina	Bello	amina.bello@example.com	08031234567	Human Resources	HR Officer	HR Officer	2026-01-15	185000	active	12345678901	0123456789	Amina Bello	Access Bank	TIN001234567	Stanbic IBTC Pension	Staff	Welcome123!
+EMP002	Chinedu	Okafor	chinedu.okafor@example.com	08039876543	Accounts	Accountant	Senior Accountant	2025-11-03	275000	active	23456789012	1023456789	Chinedu Okafor	GTBank	TIN002345678	Leadway Pensure	Accountant	Welcome123!
+EMP003	Fatima	Yusuf	fatima.yusuf@example.com	08124567890	Projects	Project Coordinator	Project Coordinator	2026-02-10	220000	active	34567890123	2023456789	Fatima Yusuf	First Bank	TIN003456789	AIICO Pension	Staff	Welcome123!
+EMP004	Emeka	Nwosu	emeka.nwosu@example.com	08135678901	Procurement	Procurement Officer	Procurement Officer	2024-09-18	240000	inactive	45678901234	3023456789	Emeka Nwosu	UBA	TIN004567890	ARM Pension	Staff	Welcome123!
+EMP005	Grace	Adeyemi	grace.adeyemi@example.com	07041234567	Operations	Site Supervisor	Site Supervisor	2025-06-24	260000	active	56789012345	4023456789	Grace Adeyemi	Sterling Bank	TIN005678901	NLPC Pension	Staff	Welcome123!

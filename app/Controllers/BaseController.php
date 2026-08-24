@@ -23,6 +23,16 @@ class BaseController extends Controller
         }
     }
 
+    protected function requireSuperAdmin(): void
+    {
+        $this->requireAccess();
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (!in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+            $_SESSION['company_flash'] = 'This module is available to Super Admin accounts only.';
+            $this->redirect('/');
+        }
+    }
+
     protected function currentUser(): ?array
     {
         return $_SESSION['user'] ?? null;

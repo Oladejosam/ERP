@@ -87,15 +87,6 @@ class CompanyController extends BaseController
         ]);
     }
 
-    private function requireSuperAdmin(): void
-    {
-        $this->requireAccess();
-        $role = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
-        if (!in_array($role, ['super admin', 'superadministrator', 'super administrator'], true)) {
-            $this->redirect('/');
-        }
-    }
-
     private function handleLogoUpload(?array $file): ?string
     {
         if (!$file || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {

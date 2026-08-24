@@ -187,7 +187,11 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Login Role</label>
-                            <input class="form-control" name="role" value="Staff" required>
+                            <select class="form-select" name="role" required>
+                                <?php foreach (($roles ?? []) as $role): ?>
+                                    <option value="<?php echo htmlspecialchars($role['name']); ?>" <?php echo ($role['name'] ?? '') === 'Staff' ? 'selected' : ''; ?>><?php echo htmlspecialchars($role['name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Login Password</label>

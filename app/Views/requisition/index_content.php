@@ -29,6 +29,7 @@
                     </div>
                     <div class="mb-3"><label class="form-label" for="supplier">Supplier</label><input id="supplier" class="form-control" name="supplier" maxlength="150"></div>
                     <div class="mb-3"><label class="form-label" for="supplierAddress">Supplier Address</label><textarea id="supplierAddress" class="form-control" name="supplier_address" rows="2"></textarea></div>
+                    <div class="mb-3"><label class="form-label">Tag colleagues for approval</label><div class="border rounded p-2" style="max-height: 150px; overflow-y: auto;"><?php foreach (($companyUsers ?? []) as $companyUser): ?><label class="form-check"><input class="form-check-input" type="checkbox" name="participant_ids[]" value="<?php echo (int)$companyUser['id']; ?>"><span class="form-check-label"><?php echo htmlspecialchars($companyUser['name']); ?> <small class="text-muted">(<?php echo htmlspecialchars($companyUser['email']); ?>)</small></span></label><?php endforeach; ?></div><div class="form-text">Tagged colleagues will join the temporary requisition discussion.</div></div>
                     <div class="d-flex justify-content-between align-items-center mb-2"><h6 class="fw-bold mb-0">What is being requested</h6><button type="button" class="btn btn-sm btn-outline-primary" id="addRequisitionItem">Add item</button></div>
                     <div id="requisitionItems">
                         <div class="requisition-item border rounded p-3 mb-3">
@@ -56,7 +57,7 @@
                                 <?php foreach ($requisitions as $requisition): ?>
                                     <tr>
                                         <td><?php echo htmlspecialchars($requisition['requisition_date'] ?? ''); ?></td>
-                                        <td><?php echo htmlspecialchars($requisition['title']); ?></td>
+                                        <td><a href="/ERP/public/requisition/view?id=<?php echo (int)$requisition['id']; ?>"><?php echo htmlspecialchars($requisition['title']); ?></a></td>
                                         <td><?php echo htmlspecialchars($requisition['trade'] ?? ''); ?></td>
                                         <td><?php echo htmlspecialchars($requisition['supplier'] ?? ''); ?></td>
                                         <td><?php echo htmlspecialchars($requisition['supplier_address'] ?? ''); ?></td>

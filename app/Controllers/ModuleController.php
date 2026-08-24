@@ -9,6 +9,7 @@ require_once APP_ROOT . '/app/Models/InventoryModel.php';
 require_once APP_ROOT . '/app/Models/PayrollModel.php';
 require_once APP_ROOT . '/app/Models/ProjectModel.php';
 require_once APP_ROOT . '/app/Models/EmployeeModel.php';
+require_once APP_ROOT . '/app/Models/WorkflowModel.php';
 
 class ModuleController extends BaseController
 {
@@ -16,6 +17,7 @@ class ModuleController extends BaseController
     private PayrollModel $payrollModel;
     private ProjectModel $projectModel;
     private EmployeeModel $employeeModel;
+    private WorkflowModel $workflowModel;
 
     public function __construct()
     {
@@ -23,12 +25,65 @@ class ModuleController extends BaseController
         $this->payrollModel = new PayrollModel();
         $this->projectModel = new ProjectModel();
         $this->employeeModel = new EmployeeModel();
+        $this->workflowModel = new WorkflowModel();
     }
 
     public function index(): void
     {
         $this->requireAccess();
         $this->view('modules/index', ['title' => 'Module Center']);
+    }
+
+    public function workflow(): void
+    {
+        $this->requireSuperAdmin();
+        $this->view('modules/workflow', [
+            'title' => 'Workflow',
+            'roles' => $this->workflowModel->getRoles(),
+            'parentLinks' => $this->workflowModel->getParentLinks(),
+            'roleLevels' => $this->workflowModel->getRoleLevels(),
+            'levels' => $this->workflowModel->getLevels(),
+        ]);
+    }
+
+    public function createWorkflowLevel(): void
+    {
+        $this->requireSuperAdmin();
+        try {
+            $this->workflowModel->createLevel((string)($_POST['name'] ?? ''));
+            $_SESSION['workflow_flash'] = 'Level created successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['workflow_flash'] = 'Unable to create level: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/workflow');
+    }
+
+    public function deleteWorkflowLevel(): void
+    {
+        $this->requireSuperAdmin();
+        try {
+            $this->workflowModel->deleteLevel((int)($_POST['level_id'] ?? 0));
+            $_SESSION['workflow_flash'] = 'Level deleted successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['workflow_flash'] = 'Unable to delete level: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/workflow');
+    }
+
+    public function saveWorkflow(): void
+    {
+        $this->requireSuperAdmin();
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/modules/workflow');
+        }
+
+        try {
+            $this->workflowModel->saveParentLinks((array)($_POST['parent_role'] ?? []), (array)($_POST['role_level'] ?? []));
+            $_SESSION['workflow_flash'] = 'Approval organogram saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['workflow_flash'] = 'Unable to save the organogram: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/workflow');
     }
 
     public function inventory(): void
@@ -319,13 +374,13 @@ class ModuleController extends BaseController
         $this->requireCompanyModule('accounting');
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($_FILES['payroll_file']['tmp_name']) || ($_FILES['payroll_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-                $_SESSION['accounting_flash'] = 'Please choose a valid payroll file (CSV/XLSX) to upload.';
+                $_SESSION['accounting_flash'] = 'Please choose a valid payroll CSV file to upload.';
             } else {
                 $fileName = $_FILES['payroll_file']['name'] ?? '';
                 $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
 
-                if (!in_array($extension, ['csv', 'xlsx', 'xls'], true)) {
-                    $_SESSION['accounting_flash'] = 'Unsupported file type. Upload a CSV, XLSX, or XLS file.';
+                if ($extension !== 'csv') {
+                    $_SESSION['accounting_flash'] = 'Unsupported file type. Upload the payroll CSV template.';
                 } else {
                     $imported = $this->payrollModel->bulkUploadPayrolls($_FILES['payroll_file']);
                     $_SESSION['accounting_flash'] = $imported > 0
@@ -336,5 +391,21 @@ class ModuleController extends BaseController
         }
 
         $this->redirect('/modules/accounting');
+    }
+
+    public function downloadPayrollTemplate(): void
+    {
+        $this->requireCompanyModule('accounting');
+        $templatePath = APP_ROOT . '/payroll_template.csv';
+        if (!is_file($templatePath)) {
+            $_SESSION['accounting_flash'] = 'The payroll template is unavailable.';
+            $this->redirect('/modules/accounting');
+        }
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="payroll_template.csv"');
+        header('Content-Length: ' . (string)filesize($templatePath));
+        readfile($templatePath);
+        exit;
     }
 }

@@ -93,9 +93,29 @@ class EmployeeModel extends Model
                 id INT PRIMARY KEY AUTO_INCREMENT,
                 company_id INT NOT NULL,
                 name VARCHAR(100) NOT NULL,
+                role_id INT NULL,
+                head_employee_id INT NULL,
+                head_title VARCHAR(100) NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE KEY unique_company_department (company_id, name)
             )'
+        );
+        $this->query('ALTER TABLE departments ADD COLUMN IF NOT EXISTS role_id INT NULL AFTER name');
+        $this->query('ALTER TABLE departments ADD COLUMN IF NOT EXISTS head_employee_id INT NULL AFTER role_id');
+        $this->query('ALTER TABLE departments ADD COLUMN IF NOT EXISTS head_title VARCHAR(100) NULL AFTER head_employee_id');
+        $this->query('ALTER TABLE departments ADD COLUMN IF NOT EXISTS head_role_id INT NULL AFTER role_id');
+        $this->query('UPDATE departments SET head_role_id = role_id WHERE head_role_id IS NULL AND role_id IS NOT NULL');
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS department_roles (
+                department_id INT NOT NULL,
+                company_id INT NOT NULL,
+                role_id INT NOT NULL,
+                PRIMARY KEY (department_id, role_id)
+            )'
+        );
+        $this->query(
+            'INSERT IGNORE INTO department_roles (department_id, company_id, role_id)
+             SELECT id, company_id, role_id FROM departments WHERE role_id IS NOT NULL'
         );
         $this->query('INSERT IGNORE INTO departments (company_id, name) SELECT DISTINCT company_id, department FROM employees WHERE department IS NOT NULL AND department <> ""');
     }
@@ -108,17 +128,81 @@ class EmployeeModel extends Model
 
     public function getDepartments(): array
     {
-        $stmt = $this->query('SELECT id, name FROM departments WHERE company_id = ? ORDER BY name ASC', [$this->currentCompanyId()]);
-        return $stmt->fetchAll();
+        $stmt = $this->query(
+            'SELECT d.id, d.name, d.role_id, d.head_role_id, d.head_employee_id, d.head_title, r.name AS role_name
+             FROM departments d
+             LEFT JOIN roles r ON r.id = d.head_role_id
+             WHERE d.company_id = ? ORDER BY d.name ASC',
+            [$this->currentCompanyId()]
+        );
+        $departments = $stmt->fetchAll();
+        foreach ($departments as &$department) {
+            $department['role_ids'] = array_map(
+                static fn (array $role): int => (int)$role['id'],
+                $this->query(
+                    'SELECT r.id FROM department_roles dr INNER JOIN roles r ON r.id = dr.role_id AND r.company_id = dr.company_id WHERE dr.department_id = ? AND dr.company_id = ? ORDER BY r.name ASC',
+                    [(int)$department['id'], $this->currentCompanyId()]
+                )->fetchAll()
+            );
+        }
+        return $departments;
     }
 
-    public function createDepartment(string $name): void
+    public function createDepartment(string $name, array $roleIds = [], ?int $headRoleId = null, ?int $headEmployeeId = null, ?string $headTitle = null): void
     {
         $name = trim($name);
         if ($name === '' || strlen($name) > 100) {
             throw new InvalidArgumentException('A department name between 1 and 100 characters is required.');
         }
-        $this->query('INSERT INTO departments (company_id, name) VALUES (?, ?)', [$this->currentCompanyId(), $name]);
+        $roleIds = array_values(array_unique(array_filter(array_map('intval', $roleIds), static fn (int $roleId): bool => $roleId > 0)));
+        $this->validateDepartmentAssignments($name, $roleIds, $headRoleId, $headEmployeeId, $headTitle);
+        $companyId = $this->currentCompanyId();
+        $this->query('INSERT INTO departments (company_id, name, role_id, head_role_id, head_employee_id, head_title) VALUES (?, ?, ?, ?, ?, ?)', [$companyId, $name, $headRoleId, $headRoleId, $headEmployeeId, $headTitle]);
+        $departmentId = (int)$this->db->lastInsertId();
+        foreach ($roleIds as $roleId) {
+            $this->query('INSERT INTO department_roles (department_id, company_id, role_id) VALUES (?, ?, ?)', [$departmentId, $companyId, $roleId]);
+        }
+    }
+
+    public function updateDepartmentAssignments(int $departmentId, array $roleIds, ?int $headRoleId, ?int $headEmployeeId, ?string $headTitle): void
+    {
+        $department = $this->query('SELECT name FROM departments WHERE id = ? AND company_id = ? LIMIT 1', [$departmentId, $this->currentCompanyId()])->fetch();
+        if (!$department) {
+            throw new InvalidArgumentException('Department not found.');
+        }
+        $roleIds = array_values(array_unique(array_filter(array_map('intval', $roleIds), static fn (int $roleId): bool => $roleId > 0)));
+        $this->validateDepartmentAssignments((string)$department['name'], $roleIds, $headRoleId, $headEmployeeId, $headTitle);
+        $companyId = $this->currentCompanyId();
+        $this->query('UPDATE departments SET role_id = ?, head_role_id = ?, head_employee_id = ?, head_title = ? WHERE id = ? AND company_id = ?', [$headRoleId, $headRoleId, $headEmployeeId, $headTitle, $departmentId, $companyId]);
+        $this->query('DELETE FROM department_roles WHERE department_id = ? AND company_id = ?', [$departmentId, $companyId]);
+        foreach ($roleIds as $roleId) {
+            $this->query('INSERT INTO department_roles (department_id, company_id, role_id) VALUES (?, ?, ?)', [$departmentId, $companyId, $roleId]);
+        }
+    }
+
+    private function validateDepartmentAssignments(string $departmentName, array $roleIds, ?int $headRoleId, ?int $headEmployeeId, ?string $headTitle): void
+    {
+        foreach ($roleIds as $roleId) {
+            $roleExists = $this->query('SELECT id FROM roles WHERE id = ? AND company_id = ? LIMIT 1', [$roleId, $this->currentCompanyId()])->fetch();
+            if (!$roleExists) {
+                throw new InvalidArgumentException('One of the selected roles was not found for this company.');
+            }
+        }
+        if ($headRoleId !== null && !in_array($headRoleId, $roleIds, true)) {
+            throw new InvalidArgumentException('The department head must be one of the assigned roles.');
+        }
+        if ($headEmployeeId !== null) {
+            $headExists = $this->query('SELECT id FROM employees WHERE id = ? AND company_id = ? AND department = ? LIMIT 1', [$headEmployeeId, $this->currentCompanyId(), $departmentName])->fetch();
+            if (!$headExists) {
+                throw new InvalidArgumentException('The department head must be an employee in this department.');
+            }
+        }
+        if ($headTitle !== null) {
+            $headRoleExists = $this->query('SELECT id FROM management_roles WHERE name = ? AND company_id = ? LIMIT 1', [$headTitle, $this->currentCompanyId()])->fetch();
+            if (!$headRoleExists) {
+                throw new InvalidArgumentException('Selected management role was not found.');
+            }
+        }
     }
 
     public function deleteDepartment(int $departmentId): void
@@ -133,6 +217,7 @@ class EmployeeModel extends Model
             throw new InvalidArgumentException('This department still has assigned employees. Reassign them before deleting it.');
         }
         $this->query('DELETE FROM departments WHERE id = ? AND company_id = ?', [$departmentId, $this->currentCompanyId()]);
+        $this->query('DELETE FROM department_roles WHERE department_id = ? AND company_id = ?', [$departmentId, $this->currentCompanyId()]);
     }
 
     public function getEmployeeById(int $id): ?array
@@ -340,7 +425,7 @@ class EmployeeModel extends Model
         }
 
         $this->query(
-            'INSERT INTO employees (company_id, employee_code, first_name, last_name, email, phone, department, position, designation, hire_date, salary, status, profile_picture, nin, account_number, account_name, bank_name, tin, pfa, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+            'INSERT INTO employees (company_id, employee_code, first_name, last_name, email, phone, department, position, designation, hire_date, salary, status, profile_picture, nin, account_number, account_name, bank_name, tin, pfa, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
             [$this->currentCompanyId(), $employeeCode, $firstName, $lastName, $email, $phone, $department, $position, $designation !== '' ? $designation : null, $hireDate, number_format($salary, 2, '.', ''), $status, $profilePicture !== '' ? $profilePicture : null, $nin !== '' ? $nin : null, $accountNumber !== '' ? $accountNumber : null, $accountName !== '' ? $accountName : null, $bankName !== '' ? $bankName : null, $tin !== '' ? $tin : null, $pfa !== '' ? $pfa : null]
         );
 
