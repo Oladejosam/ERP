@@ -118,20 +118,47 @@ class ProjectModel extends Model
                 deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )'
         );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS project_schedule (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                project_id INT NOT NULL,
+                task_name VARCHAR(180) NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                status ENUM("planned","in_progress","completed","on_hold") NOT NULL DEFAULT "planned",
+                progress_percent INT NOT NULL DEFAULT 0,
+                assigned_to VARCHAR(150) DEFAULT NULL,
+                notes TEXT DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )'
+        );
     }
 
     public function getProjects(): array
     {
-        return $this->query(
+        $projects = $this->query(
             'SELECT * FROM projects WHERE company_id = ? AND deleted_at IS NULL ORDER BY created_at DESC, id DESC',
             [$this->currentCompanyId()]
         )->fetchAll();
+        foreach ($projects as &$project) {
+            $this->applyScheduleProgress($project);
+        }
+        unset($project);
+        return $projects;
     }
 
     public function getProjectById(int $id): ?array
     {
         $stmt = $this->query('SELECT * FROM projects WHERE id = ? AND company_id = ? AND deleted_at IS NULL LIMIT 1', [$id, $this->currentCompanyId()]);
-        return $stmt->fetch() ?: null;
+        $project = $stmt->fetch();
+        if (!$project) {
+            return null;
+        }
+        $this->applyScheduleProgress($project);
+        return $project;
     }
 
     public function getProjectDocuments(int $projectId): array
@@ -152,6 +179,92 @@ class ProjectModel extends Model
              ORDER BY e.first_name ASC, e.last_name ASC',
             [$projectId, $this->currentCompanyId()]
         )->fetchAll();
+    }
+
+    public function getQuantitySurveyorProjects(int $employeeId): array
+    {
+        return $this->query(
+            'SELECT DISTINCT p.* FROM projects p INNER JOIN project_assignments a ON a.project_id = p.id AND a.company_id = p.company_id WHERE p.company_id = ? AND p.deleted_at IS NULL AND a.employee_id = ? AND LOWER(TRIM(a.job_title)) IN ("quantity surveyor", "site quantity surveyor") ORDER BY p.name ASC, p.id ASC',
+            [$this->currentCompanyId(), $employeeId]
+        )->fetchAll();
+    }
+
+    public function isQuantitySurveyorForProject(int $employeeId, int $projectId): bool
+    {
+        return (bool)$this->query(
+            'SELECT 1 FROM project_assignments a INNER JOIN projects p ON p.id = a.project_id AND p.company_id = a.company_id WHERE a.company_id = ? AND a.employee_id = ? AND a.project_id = ? AND p.deleted_at IS NULL AND LOWER(TRIM(a.job_title)) IN ("quantity surveyor", "site quantity surveyor") LIMIT 1',
+            [$this->currentCompanyId(), $employeeId, $projectId]
+        )->fetchColumn();
+    }
+
+    public function getProjectSchedule(int $projectId): array
+    {
+        return $this->query(
+            'SELECT * FROM project_schedule WHERE project_id = ? AND company_id = ? ORDER BY start_date ASC, end_date ASC, id ASC',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function saveSchedule(array $data): int
+    {
+        $scheduleId = (int)($data['schedule_id'] ?? 0);
+        $projectId = (int)($data['project_id'] ?? 0);
+        $taskName = trim((string)($data['task_name'] ?? ''));
+        $startDate = trim((string)($data['schedule_start_date'] ?? ''));
+        $endDate = trim((string)($data['schedule_end_date'] ?? ''));
+        $status = trim((string)($data['schedule_status'] ?? 'planned'));
+        $progress = max(0, min(100, (int)($data['schedule_progress_percent'] ?? 0)));
+        if (!$this->getProjectById($projectId) || $taskName === '' || $startDate === '' || $endDate === '') {
+            throw new InvalidArgumentException('Project, task name, and schedule dates are required.');
+        }
+        if ($endDate < $startDate) {
+            throw new InvalidArgumentException('The schedule end date cannot be before the start date.');
+        }
+        if (!in_array($status, ['planned', 'in_progress', 'completed', 'on_hold'], true)) {
+            throw new InvalidArgumentException('Invalid schedule status.');
+        }
+        $values = [$taskName, $startDate, $endDate, $status, $progress, trim((string)($data['assigned_to'] ?? '')) ?: null, trim((string)($data['schedule_notes'] ?? '')) ?: null];
+        if ($scheduleId > 0) {
+            $this->query(
+                'UPDATE project_schedule SET task_name = ?, start_date = ?, end_date = ?, status = ?, progress_percent = ?, assigned_to = ?, notes = ? WHERE id = ? AND project_id = ? AND company_id = ?',
+                array_merge($values, [$scheduleId, $projectId, $this->currentCompanyId()])
+            );
+            $this->refreshProjectProgress($projectId);
+            return $scheduleId;
+        }
+        $this->query(
+            'INSERT INTO project_schedule (company_id, project_id, task_name, start_date, end_date, status, progress_percent, assigned_to, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            array_merge([$this->currentCompanyId(), $projectId], $values)
+        );
+        $this->refreshProjectProgress($projectId);
+        return (int)$this->db->lastInsertId();
+    }
+
+    private function applyScheduleProgress(array &$project): void
+    {
+        $scheduleProgress = $this->query(
+            'SELECT ROUND(SUM((DATEDIFF(end_date, start_date) + 1) * progress_percent) / NULLIF(SUM(DATEDIFF(end_date, start_date) + 1), 0)) AS progress_percent, COUNT(*) AS activity_count FROM project_schedule WHERE project_id = ? AND company_id = ?',
+            [(int)$project['id'], $this->currentCompanyId()]
+        )->fetch();
+        if ((int)($scheduleProgress['activity_count'] ?? 0) > 0) {
+            $project['progress_percent'] = max(0, min(100, (int)$scheduleProgress['progress_percent']));
+            $project['progress_from_schedule'] = true;
+        }
+    }
+
+    private function refreshProjectProgress(int $projectId): void
+    {
+        $project = $this->query('SELECT id FROM projects WHERE id = ? AND company_id = ? AND deleted_at IS NULL LIMIT 1', [$projectId, $this->currentCompanyId()])->fetch();
+        if (!$project) {
+            return;
+        }
+        $scheduleProgress = $this->query(
+            'SELECT ROUND(SUM((DATEDIFF(end_date, start_date) + 1) * progress_percent) / NULLIF(SUM(DATEDIFF(end_date, start_date) + 1), 0)) AS progress_percent, COUNT(*) AS activity_count FROM project_schedule WHERE project_id = ? AND company_id = ?',
+            [$projectId, $this->currentCompanyId()]
+        )->fetch();
+        if ((int)($scheduleProgress['activity_count'] ?? 0) > 0) {
+            $this->query('UPDATE projects SET progress_percent = ? WHERE id = ? AND company_id = ?', [(int)$scheduleProgress['progress_percent'], $projectId, $this->currentCompanyId()]);
+        }
     }
 
     public function assignEmployee(int $projectId, int $employeeId, string $jobTitle): void

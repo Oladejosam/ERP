@@ -37,7 +37,7 @@
                             <div class="list-group-item">
                                 <div class="d-flex justify-content-between align-items-center mb-3">
                                     <strong><?php echo htmlspecialchars($department['name']); ?></strong>
-                                    <form method="post" action="/ERP/public/management/departments/delete" onsubmit="return confirm('Delete this department?');">
+                                    <form method="post" action="/ERP/public/management/departments/delete" onsubmit="return confirm('Delete this department? Employees assigned to it will have a blank department until updated.');">
                                         <input type="hidden" name="department_id" value="<?php echo (int)$department['id']; ?>">
                                         <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                                     </form>

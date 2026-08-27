@@ -92,6 +92,14 @@
                             <?php endforeach; ?>
                         </select>
                     </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="role_id">Login Role</label>
+                        <select id="role_id" class="form-select" name="role_id" required>
+                            <?php foreach (($roles ?? []) as $role): ?>
+                                <option value="<?php echo (int)$role['id']; ?>" <?php echo (int)($employee['role_id'] ?? 0) === (int)$role['id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($role['name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                     <?php foreach (($customFields ?? []) as $customField): ?>
                         <div class="col-md-6">
                             <label class="form-label" for="custom_<?php echo (int)$customField['id']; ?>"><?php echo htmlspecialchars($customField['field_name']); ?></label>

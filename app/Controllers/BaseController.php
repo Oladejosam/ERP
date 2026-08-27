@@ -45,5 +45,13 @@ class BaseController extends Controller
             $_SESSION['company_flash'] = 'This module is not enabled for the selected company.';
             $this->redirect('/');
         }
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (!in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+            $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+            if ($employeeId > 0 && !(new CompanyModel())->hasEmployeeModuleAccess($employeeId, $moduleKey)) {
+                $_SESSION['company_flash'] = 'This module is not enabled for your staff account.';
+                $this->redirect('/');
+            }
+        }
     }
 }

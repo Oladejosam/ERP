@@ -10,6 +10,21 @@
 <?php endif; ?>
 
 <div class="row g-4">
+    <?php if (!empty($dispatchRequests)): ?>
+        <div class="col-12">
+            <div class="card border-warning shadow-sm">
+                <div class="card-body">
+                    <h5 class="fw-bold mb-3">Material Dispatch Notifications</h5>
+                    <?php foreach ($dispatchRequests as $dispatch): ?>
+                        <div class="border-bottom py-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                            <div><strong><?php echo htmlspecialchars($dispatch['description'] ?? 'Inventory item'); ?></strong><div class="small text-muted"><?php echo htmlspecialchars($dispatch['title']); ?> · Requested by <?php echo htmlspecialchars($dispatch['requester_name']); ?> · Quantity: <?php echo number_format((float)$dispatch['quantity'], 2); ?> <?php echo htmlspecialchars($dispatch['unit'] ?? ''); ?></div></div>
+                            <form method="post" action="/ERP/public/requisition/dispatch/approve"><input type="hidden" name="dispatch_id" value="<?php echo (int)$dispatch['id']; ?>"><button class="btn btn-success" type="submit" onclick="return confirm('Approve dispatch and deduct this quantity from inventory?');"><i class="bi bi-check-circle me-1"></i>Approve Dispatch</button></form>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
     <div class="col-lg-5">
         <div class="card shadow-sm border-0">
             <div class="card-body">
@@ -20,8 +35,14 @@
                         <input id="requisitionDate" type="date" class="form-control" name="date" value="<?php echo date('Y-m-d'); ?>" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label" for="projectTitle">Project Title</label>
-                        <input id="projectTitle" class="form-control" name="project_title" maxlength="150" required>
+                        <?php if (!empty($isSiteQuantitySurveyor)): ?>
+                            <label class="form-label" for="projectSite">Project Site</label>
+                            <select id="projectSite" class="form-select" name="project_id" required><option value="">Select project site</option><?php foreach (($projects ?? []) as $project): ?><option value="<?php echo (int)$project['id']; ?>"><?php echo htmlspecialchars($project['project_number'] . ' - ' . $project['name']); ?></option><?php endforeach; ?></select>
+                            <div class="form-text">This requisition will be filed against the selected project.</div>
+                        <?php else: ?>
+                            <label class="form-label" for="projectTitle">Project Title</label>
+                            <input id="projectTitle" class="form-control" name="project_title" maxlength="150" required>
+                        <?php endif; ?>
                     </div>
                     <div class="mb-3">
                         <label class="form-label" for="trade">Trade</label>
@@ -34,10 +55,12 @@
                     <div id="requisitionItems">
                         <div class="requisition-item border rounded p-3 mb-3">
                             <div class="d-flex justify-content-between mb-2"><span class="fw-semibold">Item 1</span><button type="button" class="btn btn-sm btn-outline-danger remove-requisition-item">Remove</button></div>
-                            <div class="mb-2"><label class="form-label">Description of Item</label><textarea class="form-control" name="items[0][description]" rows="2"></textarea></div>
+                            <div class="mb-2"><label class="form-label">Item Name</label><input class="form-control requisition-item-name" name="items[0][item_name]" list="inventoryItemSuggestions" autocomplete="off" placeholder="Start typing an inventory item"></div>
+                            <div class="mb-2"><label class="form-label">Description of Item</label><textarea class="form-control requisition-item-description" name="items[0][description]" rows="2"></textarea><div class="form-text inventory-suggestion-status" aria-live="polite"></div></div>
                             <div class="row g-2"><div class="col-6"><label class="form-label">Code</label><input class="form-control" name="items[0][code]"></div><div class="col-6"><label class="form-label">Unit</label><input class="form-control" name="items[0][unit]"></div><div class="col-6"><label class="form-label">Quantity Required</label><input type="number" class="form-control" name="items[0][quantity_required]" min="0" step="0.01"></div><div class="col-6"><label class="form-label">Quantity in Stock</label><input type="number" class="form-control" name="items[0][quantity_in_stock]" min="0" step="0.01"></div><div class="col-6"><label class="form-label">Quantity to Purchase</label><input type="number" class="form-control" name="items[0][quantity_to_purchase]" min="0" step="0.01" required></div><div class="col-6"><label class="form-label">Price</label><input type="number" class="form-control" name="items[0][price]" min="0" step="0.01" required></div></div>
                         </div>
                     </div>
+                    <datalist id="inventoryItemSuggestions"></datalist>
                     <button class="btn btn-primary w-100" type="submit">Submit Requisition</button>
                 </form>
             </div>
@@ -78,7 +101,77 @@
 document.addEventListener('DOMContentLoaded', function () {
     const items = document.getElementById('requisitionItems');
     const addButton = document.getElementById('addRequisitionItem');
+    const suggestions = document.getElementById('inventoryItemSuggestions');
     let itemIndex = 1;
+
+    function updateSuggestions(item, matches) {
+        suggestions.innerHTML = '';
+        matches.forEach(function (match) {
+            const option = document.createElement('option');
+            option.value = match.name;
+            option.label = match.item_code + ' - ' + match.unit + ' - stock: ' + match.current_stock;
+            suggestions.appendChild(option);
+        });
+        item.querySelector('.inventory-suggestion-status').textContent = matches.length ? 'Select an inventory item to fill its details.' : 'No matching inventory item found.';
+    }
+
+    function populateItem(item, inventoryItem) {
+        item.querySelector('.requisition-item-description').value = inventoryItem.name;
+        item.querySelector('[name$="[code]"]').value = inventoryItem.item_code || '';
+        item.querySelector('[name$="[unit]"]').value = inventoryItem.unit || '';
+        item.querySelector('[name$="[quantity_in_stock]"]').value = inventoryItem.current_stock || 0;
+        item.querySelector('[name$="[price]"]').value = inventoryItem.cost_price || inventoryItem.selling_price || 0;
+        item.querySelector('.inventory-suggestion-status').textContent = 'Inventory details loaded.';
+    }
+
+    function fillFromInventory(item) {
+        const nameField = item.querySelector('.requisition-item-name');
+        if (nameField.value.trim() === '') {
+            return;
+        }
+
+        fetch('/ERP/public/requisition/inventory-search?q=' + encodeURIComponent(nameField.value.trim()), { headers: { Accept: 'application/json' } })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+                const inventoryItem = (data.items || []).find(function (candidate) {
+                    return candidate.name.toLowerCase() === nameField.value.trim().toLowerCase();
+                });
+                if (inventoryItem) {
+                    populateItem(item, inventoryItem);
+                }
+            })
+            .catch(function () { item.querySelector('.inventory-suggestion-status').textContent = 'Inventory details are unavailable.'; });
+    }
+
+    items.addEventListener('input', function (event) {
+        if (!event.target.classList.contains('requisition-item-name')) {
+            return;
+        }
+        const item = event.target.closest('.requisition-item');
+        const query = event.target.value.trim();
+        if (query.length < 2) {
+            updateSuggestions(item, []);
+            return;
+        }
+        fetch('/ERP/public/requisition/inventory-search?q=' + encodeURIComponent(query), { headers: { Accept: 'application/json' } })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+                const matches = data.items || [];
+                updateSuggestions(item, matches);
+                const exactMatch = matches.find(function (candidate) {
+                    return candidate.name.toLowerCase() === query.toLowerCase();
+                });
+                if (exactMatch) {
+                    populateItem(item, exactMatch);
+                }
+            })
+            .catch(function () { item.querySelector('.inventory-suggestion-status').textContent = 'Inventory suggestions are unavailable.'; });
+    });
+    items.addEventListener('change', function (event) {
+        if (event.target.classList.contains('requisition-item-name')) {
+            fillFromInventory(event.target.closest('.requisition-item'));
+        }
+    });
     addButton.addEventListener('click', function () {
         const item = items.firstElementChild.cloneNode(true);
         item.querySelectorAll('input, textarea').forEach(function (field) {

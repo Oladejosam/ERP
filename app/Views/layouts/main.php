@@ -23,6 +23,9 @@ $companyThemeColor = preg_match('/^#[0-9a-fA-F]{6}$/', (string)($companySettings
         .nav-link { color: #475569; border-radius: 10px; padding: 10px 12px; }
         .nav-link.active { background: #e0ecff; color: #0f172a; font-weight: 600; }
         .nav-link:hover { background: #edf3ff; }
+        @media (min-width: 992px) {
+            .sidebar-column { position: sticky; top: 1rem; align-self: flex-start; max-height: calc(100vh - 2rem); overflow-y: auto; }
+        }
         :root { --theme-color: <?php echo htmlspecialchars($companyThemeColor); ?>; }
         .topbar { background: linear-gradient(135deg, #0f172a, var(--theme-color)); }
         .brand-logo { max-height: 38px; max-width: 180px; object-fit: contain; }
@@ -81,7 +84,7 @@ function isActiveNav(string $href, string $currentPath): bool {
     </nav>
 
     <div class="row g-0">
-        <aside class="col-lg-2 p-3">
+        <aside class="sidebar-column col-lg-2 p-3">
             <div class="card shadow-sm border-0 sidebar-card">
                 <div class="card-body p-3">
                     <h6 class="text-uppercase text-muted mb-3">Main Menu</h6>
@@ -90,10 +93,12 @@ function isActiveNav(string $href, string $currentPath): bool {
                         <?php if ($companyModel->hasModuleAccess('inventory')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/inventory', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/inventory"><i class="bi bi-box-seam me-2"></i>Inventory</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('accounting')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/accounting', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/accounting"><i class="bi bi-cash-stack me-2"></i>Accounting</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('employees')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/employees', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/employees"><i class="bi bi-people me-2"></i>Employees</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasModuleAccess('employees')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/module-access', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/module-access"><i class="bi bi-person-lock me-2"></i>Staff Module Access</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('hr')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/hr', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/hr"><i class="bi bi-person-badge me-2"></i>HR</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('procurement')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/procurement', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/procurement"><i class="bi bi-cart3 me-2"></i>Procurement</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('requisition')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/requisition', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/requisition"><i class="bi bi-file-earmark-text me-2"></i>Requisition</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('projects')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/projects', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/projects"><i class="bi bi-kanban me-2"></i>Project</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasModuleAccess('contract_admin')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/contract-admin', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/contract-admin"><i class="bi bi-file-earmark-check me-2"></i>Contract Admin</a></li><?php endif; ?>
                         <?php if ($isSuperAdmin): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/company/workspace', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/company/workspace"><i class="bi bi-buildings me-2"></i>Company Workspace</a></li><?php endif; ?>
                         <?php if ($isSuperAdmin): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/workflow', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/workflow"><i class="bi bi-diagram-3 me-2"></i>Workflow</a></li><?php endif; ?>
                         <li><a class="nav-link<?php echo isActiveNav('/ERP/public/setup', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/setup"><i class="bi bi-building-gear me-2"></i>Company Setup</a></li>

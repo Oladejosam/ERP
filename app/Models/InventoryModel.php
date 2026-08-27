@@ -14,7 +14,10 @@ class InventoryModel extends Model
     private function ensureInventoryTables(): void
     {
         $this->query('CREATE TABLE IF NOT EXISTS inventory_categories (id INT PRIMARY KEY AUTO_INCREMENT, company_id INT NOT NULL DEFAULT 1, name VARCHAR(100) NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY uq_inventory_category_company_name (company_id, name))');
-        $this->query('CREATE TABLE IF NOT EXISTS inventory_items (id INT PRIMARY KEY AUTO_INCREMENT, company_id INT NOT NULL DEFAULT 1, item_code VARCHAR(50) NOT NULL, name VARCHAR(150) NOT NULL, category_id INT NOT NULL, unit VARCHAR(50) NOT NULL, cost_price DECIMAL(12,2) DEFAULT 0.00, selling_price DECIMAL(12,2) DEFAULT 0.00, opening_stock INT DEFAULT 0, current_stock INT DEFAULT 0, reorder_level INT DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY uq_inventory_item_company_code (company_id, item_code), FOREIGN KEY (category_id) REFERENCES inventory_categories(id))');
+        $this->query('CREATE TABLE IF NOT EXISTS inventory_items (id INT PRIMARY KEY AUTO_INCREMENT, company_id INT NOT NULL DEFAULT 1, item_code VARCHAR(50) NOT NULL, name VARCHAR(150) NOT NULL, category_id INT NOT NULL, unit VARCHAR(50) NOT NULL, supplier_name VARCHAR(150) NULL, supplier_contact VARCHAR(150) NULL, supplier_phone VARCHAR(50) NULL, supplier_address VARCHAR(255) NULL, cost_price DECIMAL(12,2) DEFAULT 0.00, selling_price DECIMAL(12,2) DEFAULT 0.00, opening_stock INT DEFAULT 0, current_stock INT DEFAULT 0, reorder_level INT DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY uq_inventory_item_company_code (company_id, item_code), FOREIGN KEY (category_id) REFERENCES inventory_categories(id))');
+        foreach (['supplier_name' => 'VARCHAR(150) NULL', 'supplier_contact' => 'VARCHAR(150) NULL', 'supplier_phone' => 'VARCHAR(50) NULL', 'supplier_address' => 'VARCHAR(255) NULL'] as $column => $definition) {
+            $this->query('ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS ' . $column . ' ' . $definition);
+        }
         $this->query('CREATE TABLE IF NOT EXISTS inventory_change_history (id INT PRIMARY KEY AUTO_INCREMENT, item_id INT NOT NULL, change_reason TEXT NOT NULL, before_data TEXT NOT NULL, after_data TEXT NOT NULL, changed_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE)');
         foreach (['inventory_categories', 'inventory_items'] as $table) {
             $this->query('UPDATE `' . $table . '` SET company_id = 1 WHERE company_id IS NULL');
@@ -31,6 +34,21 @@ class InventoryModel extends Model
     {
         $items = $this->query('SELECT i.*, c.name AS category_name FROM inventory_items i LEFT JOIN inventory_categories c ON c.id = i.category_id WHERE i.company_id = ? ORDER BY i.created_at DESC', [$this->currentCompanyId()]);
         return $items->fetchAll();
+    }
+
+    public function searchItems(string $search, int $limit = 10): array
+    {
+        $search = trim($search);
+        if ($search === '') {
+            return [];
+        }
+
+        $limit = max(1, min($limit, 20));
+        $stmt = $this->query(
+            'SELECT item_code, name, unit, current_stock, cost_price, selling_price FROM inventory_items WHERE company_id = ? AND (name LIKE ? OR item_code LIKE ?) ORDER BY name ASC LIMIT ' . $limit,
+            [$this->currentCompanyId(), '%' . $search . '%', '%' . $search . '%']
+        );
+        return $stmt->fetchAll();
     }
 
     public function getItemById(int $id): ?array
@@ -58,6 +76,11 @@ class InventoryModel extends Model
             return (int)$row['id'];
         }
 
+        $legacyCategory = $this->query('SELECT id FROM inventory_categories WHERE LOWER(name) = LOWER(?) LIMIT 1', [$trimmed])->fetch();
+        if ($legacyCategory) {
+            return (int)$legacyCategory['id'];
+        }
+
         $this->query('INSERT INTO inventory_categories (company_id, name, created_at) VALUES (?, ?, NOW())', [$this->currentCompanyId(), $trimmed]);
         return (int)$this->db->lastInsertId();
     }
@@ -78,10 +101,14 @@ class InventoryModel extends Model
         $openingStock = (int)($data['opening_stock'] ?? 0);
         $currentStock = (int)($data['current_stock'] ?? $openingStock);
         $reorderLevel = (int)($data['reorder_level'] ?? 0);
+        $supplierName = trim((string)($data['supplier_name'] ?? '')) ?: null;
+        $supplierContact = trim((string)($data['supplier_contact'] ?? '')) ?: null;
+        $supplierPhone = trim((string)($data['supplier_phone'] ?? '')) ?: null;
+        $supplierAddress = trim((string)($data['supplier_address'] ?? '')) ?: null;
 
         $this->query(
-            'INSERT INTO inventory_items (company_id, item_code, name, category_id, unit, cost_price, selling_price, opening_stock, current_stock, reorder_level, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-            [$this->currentCompanyId(), $itemCode, $name, $categoryId, $unit, number_format($costPrice, 2, '.', ''), number_format($sellingPrice, 2, '.', ''), $openingStock, $currentStock, $reorderLevel]
+            'INSERT INTO inventory_items (company_id, item_code, name, category_id, unit, supplier_name, supplier_contact, supplier_phone, supplier_address, cost_price, selling_price, opening_stock, current_stock, reorder_level, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+            [$this->currentCompanyId(), $itemCode, $name, $categoryId, $unit, $supplierName, $supplierContact, $supplierPhone, $supplierAddress, number_format($costPrice, 2, '.', ''), number_format($sellingPrice, 2, '.', ''), $openingStock, $currentStock, $reorderLevel]
         );
 
         return (int)$this->db->lastInsertId();
@@ -106,6 +133,13 @@ class InventoryModel extends Model
         if (($data['unit'] ?? '') !== '') {
             $fields[] = 'unit = ?';
             $params[] = trim((string)$data['unit']);
+        }
+
+        foreach (['supplier_name', 'supplier_contact', 'supplier_phone', 'supplier_address'] as $supplierField) {
+            if (array_key_exists($supplierField, $data)) {
+                $fields[] = $supplierField . ' = ?';
+                $params[] = trim((string)$data[$supplierField]) ?: null;
+            }
         }
 
         if (isset($data['cost_price'])) {

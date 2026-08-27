@@ -147,7 +147,7 @@
                 <div class="modal-body">
                     <p class="text-muted">Use the downloaded template. Keep the column headings unchanged and save it as the supplied tab-separated .xls file or as CSV.</p>
                     <label class="form-label" for="employee_file">Employee template</label>
-                    <input class="form-control" type="file" id="employee_file" name="employee_file" accept=".xls,.csv,text/csv,application/vnd.ms-excel" required>
+                    <input class="form-control" type="file" id="employee_file" name="employee_file" accept=".xls,.xlsx,.csv,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
                     <div class="form-text">Existing employees with the same email are skipped. New login credentials use the Role and Password columns.</div>
                 </div>
                 <div class="modal-footer">

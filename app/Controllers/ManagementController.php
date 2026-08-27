@@ -9,6 +9,9 @@ require_once APP_ROOT . '/app/Models/EmployeeModel.php';
 require_once APP_ROOT . '/app/Models/UserModel.php';
 require_once APP_ROOT . '/app/Models/RoleModel.php';
 require_once APP_ROOT . '/app/Models/RequisitionModel.php';
+require_once APP_ROOT . '/app/Models/InventoryModel.php';
+require_once APP_ROOT . '/app/Models/ProjectModel.php';
+require_once APP_ROOT . '/app/Models/CompanyModel.php';
 
 class ManagementController extends BaseController
 {
@@ -16,6 +19,9 @@ class ManagementController extends BaseController
     private UserModel $userModel;
     private RoleModel $roleModel;
     private RequisitionModel $requisitionModel;
+    private InventoryModel $inventoryModel;
+    private ProjectModel $projectModel;
+    private CompanyModel $companyModel;
 
     public function __construct()
     {
@@ -23,6 +29,9 @@ class ManagementController extends BaseController
         $this->userModel = new UserModel();
         $this->roleModel = new RoleModel();
         $this->requisitionModel = new RequisitionModel();
+        $this->inventoryModel = new InventoryModel();
+        $this->projectModel = new ProjectModel();
+        $this->companyModel = new CompanyModel();
     }
 
     public function staffPortal(): void
@@ -88,6 +97,22 @@ class ManagementController extends BaseController
         $this->view('portal/site_engineer', ['title' => 'Site Engineer Portal']);
     }
 
+    public function portalSiteQuantitySurveyor(): void
+    {
+        $this->requireAccess();
+        $this->requireCompanyModule('requisition');
+        $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $projects = $this->projectModel->getQuantitySurveyorProjects($employeeId);
+        if ($projects === []) {
+            $_SESSION['requisition_flash'] = 'You do not have a Quantity Surveyor assignment on any project site.';
+            $this->redirect('/requisition');
+        }
+        $this->view('portal/site_quantity_surveyor', [
+            'title' => 'Site Quantity Surveyor Portal',
+            'projects' => $projects,
+        ]);
+    }
+
     public function portalDepartmentHead(): void
     {
         $this->requireAccess();
@@ -121,8 +146,63 @@ class ManagementController extends BaseController
             'customFields' => $this->employeeModel->getCustomFields(),
             'employeeColumns' => $this->employeeModel->getEmployeeColumnOptions(),
             'roles' => $this->roleModel->getRoles(),
+            'roles' => $this->roleModel->getRoles(),
             'search' => $search,
         ]);
+    }
+
+    public function moduleAccess(): void
+    {
+        $this->requireAccess();
+        $managedEmployeeIds = $this->requireStaffAccessManager();
+        $employees = array_values(array_filter($this->employeeModel->getEmployees(), static fn (array $employee): bool => in_array((int)$employee['id'], $managedEmployeeIds, true)));
+        $this->view('management/module_access', [
+            'title' => 'Department Staff Module Access',
+            'employees' => $employees,
+            'modules' => array_diff_key(CompanyModel::availableModules(), ['dashboard' => true]),
+            'access' => $this->getEmployeeModuleAccessMap(),
+        ]);
+    }
+
+    public function saveModuleAccess(): void
+    {
+        $this->requireAccess();
+        $managedEmployeeIds = $this->requireStaffAccessManager();
+        try {
+            foreach ((array)($_POST['employee_modules'] ?? []) as $employeeId => $modules) {
+                if (!in_array((int)$employeeId, $managedEmployeeIds, true)) {
+                    throw new InvalidArgumentException('You can only manage staff within your reporting authority.');
+                }
+                $this->companyModel->saveEmployeeModuleAccess((int)$employeeId, (array)$modules);
+            }
+            $_SESSION['employee_flash'] = 'Staff module access saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['employee_flash'] = 'Unable to save staff module access: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/module-access');
+    }
+
+    private function getEmployeeModuleAccessMap(): array
+    {
+        $access = [];
+        foreach ($this->employeeModel->getEmployees() as $employee) {
+            $employeeId = (int)$employee['id'];
+            if ($this->companyModel->hasEmployeeModuleConfiguration($employeeId)) {
+                $access[$employeeId] = $this->companyModel->getEmployeeModuleAccess($employeeId);
+            }
+        }
+        return $access;
+    }
+
+    private function requireStaffAccessManager(): array
+    {
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        $managedEmployeeIds = $this->companyModel->getManagedEmployeeIds((int)($_SESSION['user']['employee_id'] ?? 0), (int)($_SESSION['user']['role_id'] ?? 0), $roleName);
+        if ($managedEmployeeIds === []) {
+            $_SESSION['company_flash'] = 'Only the Head of Human Resource, the top organogram role, or an authorized department head can manage staff module access.';
+            $this->redirect('/');
+        }
+        return $managedEmployeeIds;
     }
 
     public function createRole(): void
@@ -180,6 +260,7 @@ class ManagementController extends BaseController
             $_SESSION['employee_flash'] = 'Employee not found.';
             $this->redirect('/management/employees');
         }
+        $employee['role_id'] = (int)(($this->userModel->getUserByEmployeeId($employeeId)['role_id'] ?? 0));
 
         $this->view('management/employee_detail', [
             'title' => 'Employee Details',
@@ -396,6 +477,7 @@ class ManagementController extends BaseController
             $this->userModel->updateUserByEmployeeId($employeeId, [
                 'name' => trim((string)($_POST['first_name'] ?? '') . ' ' . (string)($_POST['last_name'] ?? '')),
                 'email' => $email,
+                'role_id' => (int)($_POST['role_id'] ?? 0),
             ], 'Employee profile updated');
             $this->employeeModel->saveCustomFieldValues($employeeId, (array)($_POST['custom_fields'] ?? []));
             $_SESSION['employee_flash'] = 'Employee details updated successfully.';
@@ -566,39 +648,61 @@ class ManagementController extends BaseController
         }
 
         $extension = strtolower(pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
-        if (!in_array($extension, ['csv', 'xls'], true)) {
-            $_SESSION['employee_flash'] = 'Upload the provided .xls template or a .csv file. The template is tab-separated text.';
+        if (!in_array($extension, ['csv', 'xls', 'xlsx'], true)) {
+            $_SESSION['employee_flash'] = 'Upload the provided .xls, .xlsx, or .csv employee template.';
             $this->redirect('/management/employees');
         }
 
-        $handle = fopen((string)$file['tmp_name'], 'rb');
-        if ($handle === false) {
-            $_SESSION['employee_flash'] = 'The uploaded employee file could not be read.';
-            $this->redirect('/management/employees');
-        }
+        if ($extension === 'xlsx') {
+            try {
+                $rows = $this->readXlsxRows((string)$file['tmp_name']);
+            } catch (Throwable $exception) {
+                $_SESSION['employee_flash'] = 'The Excel file could not be read. Save it as .xlsx, .xls, or CSV and try again.';
+                $this->redirect('/management/employees');
+            }
+            $delimiter = null;
+        } else {
+            $handle = fopen((string)$file['tmp_name'], 'rb');
+            if ($handle === false) {
+                $_SESSION['employee_flash'] = 'The uploaded employee file could not be read.';
+                $this->redirect('/management/employees');
+            }
 
-        $header = fgetcsv($handle, 0, "\t");
-        if ($header === false) {
+            $header = fgetcsv($handle, 0, "\t");
+            if ($header === false) {
+                fclose($handle);
+                $_SESSION['employee_flash'] = 'The employee file is empty.';
+                $this->redirect('/management/employees');
+            }
+
+            $header = array_map(static function ($value): string {
+                $value = preg_replace('/^\xEF\xBB\xBF/', '', (string)$value) ?? (string)$value;
+                return strtolower(trim(preg_replace('/[^a-z0-9]+/i', '_', $value) ?? ''));
+            }, $header);
+            $delimiter = in_array('employee_code', $header, true) ? "\t" : ',';
+            if ($delimiter === ',') {
+                rewind($handle);
+                $header = fgetcsv($handle, 0, ',');
+                $header = array_map(static fn ($value): string => strtolower(trim(preg_replace('/[^a-z0-9]+/i', '_', (string)$value) ?? '')), $header ?: []);
+            }
+            $rows = [];
+            while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+                $rows[] = $row;
+            }
             fclose($handle);
-            $_SESSION['employee_flash'] = 'The employee file is empty.';
-            $this->redirect('/management/employees');
         }
 
-        $header = array_map(static function ($value): string {
-            $value = preg_replace('/^\xEF\xBB\xBF/', '', (string)$value) ?? (string)$value;
-            return strtolower(trim(preg_replace('/[^a-z0-9]+/i', '_', $value) ?? ''));
-        }, $header);
-        $delimiter = in_array('employee_code', $header, true) ? "\t" : ',';
-        if ($delimiter === ',') {
-            rewind($handle);
-            $header = fgetcsv($handle, 0, ',');
-            $header = array_map(static fn ($value): string => strtolower(trim(preg_replace('/[^a-z0-9]+/i', '_', (string)$value) ?? '')), $header ?: []);
+        if ($extension === 'xlsx') {
+            $header = array_map(static function ($value): string {
+                $value = preg_replace('/^\xEF\xBB\xBF/', '', (string)$value) ?? (string)$value;
+                return strtolower(trim(preg_replace('/[^a-z0-9]+/i', '_', $value) ?? ''));
+            }, $rows[0] ?? []);
+            $rows = array_slice($rows, 1);
         }
 
         $requiredColumns = ['employee_code', 'first_name', 'last_name', 'email', 'phone', 'department', 'position', 'hire_date', 'salary'];
         $missingColumns = array_values(array_diff($requiredColumns, $header));
         if ($missingColumns !== []) {
-            fclose($handle);
             $_SESSION['employee_flash'] = 'Missing template columns: ' . implode(', ', $missingColumns) . '.';
             $this->redirect('/management/employees');
         }
@@ -609,7 +713,7 @@ class ManagementController extends BaseController
         $errors = [];
         $rowNumber = 1;
 
-        while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+        foreach ($rows as $row) {
             $rowNumber++;
             if (count(array_filter($row, static fn ($value): bool => trim((string)$value) !== '')) === 0) {
                 continue;
@@ -689,14 +793,76 @@ class ManagementController extends BaseController
                 $errors[] = 'Row ' . $rowNumber . ': ' . $exception->getMessage();
             }
         }
-        fclose($handle);
-
         $message = 'Employee upload complete. Imported: ' . $imported . '; skipped: ' . $skipped . '; errors: ' . count($errors) . '.';
         if ($errors !== []) {
             $message .= ' ' . implode(' ', array_slice($errors, 0, 5));
         }
         $_SESSION['employee_flash'] = $message;
         $this->redirect('/management/employees');
+    }
+
+    private function readXlsxRows(string $path): array
+    {
+        if (!class_exists('ZipArchive')) {
+            throw new RuntimeException('The PHP ZIP extension is unavailable.');
+        }
+
+        $archive = new ZipArchive();
+        if ($archive->open($path) !== true) {
+            throw new RuntimeException('Invalid XLSX archive.');
+        }
+
+        $sharedStrings = [];
+        $sharedXml = $archive->getFromName('xl/sharedStrings.xml');
+        if ($sharedXml !== false) {
+            $shared = simplexml_load_string($sharedXml);
+            if ($shared !== false) {
+                foreach ($shared->si as $stringItem) {
+                    $sharedStrings[] = implode('', array_map('strval', iterator_to_array($stringItem->xpath('.//*[local-name()="t"]') ?: [])));
+                }
+            }
+        }
+
+        $sheetXml = $archive->getFromName('xl/worksheets/sheet1.xml');
+        $archive->close();
+        if ($sheetXml === false) {
+            throw new RuntimeException('Worksheet not found.');
+        }
+
+        $sheet = simplexml_load_string($sheetXml);
+        if ($sheet === false) {
+            throw new RuntimeException('Invalid worksheet XML.');
+        }
+
+        $rows = [];
+        foreach ($sheet->xpath('//*[local-name()="row"]') ?: [] as $xmlRow) {
+            $values = [];
+            foreach ($xmlRow->xpath('./*[local-name()="c"]') ?: [] as $cell) {
+                $reference = (string)$cell['r'];
+                preg_match('/^[A-Z]+/i', $reference, $columnMatch);
+                $column = 0;
+                foreach (str_split(strtoupper($columnMatch[0] ?? 'A')) as $letter) {
+                    $column = ($column * 26) + ord($letter) - 64;
+                }
+                $type = (string)$cell['t'];
+                $value = (string)$cell->v;
+                if ($type === 's') {
+                    $value = $sharedStrings[(int)$value] ?? '';
+                } elseif ($type === 'inlineStr') {
+                    $value = implode('', array_map('strval', $cell->xpath('.//*[local-name()="t"]') ?: []));
+                }
+                $values[$column - 1] = $value;
+            }
+            if ($values !== []) {
+                ksort($values);
+                $normalizedValues = array_fill(0, max(array_keys($values)) + 1, '');
+                foreach ($values as $column => $value) {
+                    $normalizedValues[$column] = $value;
+                }
+                $rows[] = $normalizedValues;
+            }
+        }
+        return $rows;
     }
 
     private function normalizeEmployeeUploadDate(string $value): ?string
@@ -706,17 +872,17 @@ class ManagementController extends BaseController
             return null;
         }
 
-        foreach (['!Y-m-d', '!d/m/Y', '!m/d/Y', '!d-m-Y', '!m-d-Y'] as $format) {
-            $date = DateTime::createFromFormat($format, $value);
-            if ($date !== false && $date->format(str_replace('!', '', $format)) === $value) {
-                return $date->format('Y-m-d');
-            }
+        if (is_numeric($value) && (float)$value >= 1 && (float)$value <= 60000) {
+            $date = new DateTimeImmutable('1899-12-30');
+            return $date->modify('+' . (int)floor((float)$value) . ' days')->format('Y-m-d');
         }
 
-        if (is_numeric($value) && (float)$value >= 1 && (float)$value <= 60000) {
-            $date = new DateTime('1899-12-30');
-            $date->modify('+' . (int)$value . ' days');
-            return $date->format('Y-m-d');
+        foreach (['Y-m-d', 'Y/m/d', 'd/m/Y', 'm/d/Y', 'd-m-Y', 'm-d-Y', 'd.m.Y', 'm.d.Y', 'Y-m-d H:i:s', 'd/m/Y H:i:s', 'm/d/Y H:i:s', 'd-m-Y H:i:s', 'm-d-Y H:i:s', 'd M Y', 'M d, Y'] as $format) {
+            $date = DateTimeImmutable::createFromFormat('!' . $format, $value);
+            $errors = DateTimeImmutable::getLastErrors();
+            if ($date !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))) {
+                return $date->format('Y-m-d');
+            }
         }
 
         return null;
@@ -811,11 +977,37 @@ class ManagementController extends BaseController
     public function requisition(): void
     {
         $this->requireCompanyModule('requisition');
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        $isSuperAdmin = in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true);
+        $isHeadStore = in_array($roleName, ['head store', 'head store keeper'], true);
+        $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $quantitySurveyorProjects = $this->projectModel->getQuantitySurveyorProjects($employeeId);
+        $isSiteQuantitySurveyor = $quantitySurveyorProjects !== [];
         $this->view('requisition/index', [
             'title' => 'Requisition',
-            'requisitions' => $this->requisitionModel->getAll(),
+            'requisitions' => $this->requisitionModel->getAll((int)($_SESSION['user']['id'] ?? 0), $isSuperAdmin),
             'companyUsers' => $this->requisitionModel->getCompanyUsers(),
+            'projects' => $isSiteQuantitySurveyor ? $quantitySurveyorProjects : $this->projectModel->getProjects(),
+            'isSiteQuantitySurveyor' => $isSiteQuantitySurveyor,
+            'dispatchRequests' => $isHeadStore || $isSuperAdmin ? $this->requisitionModel->getPendingDispatchRequests() : [],
         ]);
+    }
+
+    public function approveDispatch(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (!in_array($roleName, ['head store', 'head store keeper', 'super admin', 'superadministrator', 'super administrator'], true)) {
+            $_SESSION['requisition_flash'] = 'Only the Head Store can approve material dispatches.';
+            $this->redirect('/requisition');
+        }
+        try {
+            $this->requisitionModel->approveDispatch((int)($_POST['dispatch_id'] ?? 0), (int)($_SESSION['user']['id'] ?? 0));
+            $_SESSION['requisition_flash'] = 'Dispatch approved and inventory stock deducted.';
+        } catch (Throwable $exception) {
+            $_SESSION['requisition_flash'] = 'Unable to approve dispatch: ' . $exception->getMessage();
+        }
+        $this->redirect('/requisition');
     }
 
     public function saveRequisition(): void
@@ -827,6 +1019,14 @@ class ManagementController extends BaseController
 
         try {
             $userId = (int)($_SESSION['user']['id'] ?? 0);
+            $projectId = (int)($_POST['project_id'] ?? 0);
+            if ($projectId > 0 && !$this->projectModel->isQuantitySurveyorForProject((int)($_SESSION['user']['employee_id'] ?? 0), $projectId)) {
+                throw new InvalidArgumentException('You can only raise a site requisition for a project assigned to you as Quantity Surveyor.');
+            }
+            $isAssignedQuantitySurveyor = $this->projectModel->getQuantitySurveyorProjects((int)($_SESSION['user']['employee_id'] ?? 0)) !== [];
+            if ($isAssignedQuantitySurveyor && $projectId <= 0) {
+                throw new InvalidArgumentException('Select the project site for this requisition.');
+            }
             $this->requisitionModel->create(
                 array_merge($_POST, ['participant_ids' => (array)($_POST['participant_ids'] ?? [])]),
                 $userId > 0 ? $userId : null
@@ -836,6 +1036,14 @@ class ManagementController extends BaseController
             $_SESSION['requisition_flash'] = 'Unable to submit requisition: ' . $exception->getMessage();
         }
         $this->redirect('/requisition');
+    }
+
+    public function searchInventoryItems(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $this->json([
+            'items' => $this->inventoryModel->searchItems((string)($_GET['q'] ?? '')),
+        ]);
     }
 
     public function viewRequisition(): void

@@ -126,6 +126,7 @@ CREATE TABLE `requisitions` (
 CREATE TABLE `requisition_items` (
   `id` int(11) NOT NULL,
   `requisition_id` int(11) NOT NULL,
+  `inventory_item_id` int(11) DEFAULT NULL,
   `description` text DEFAULT NULL,
   `item_code` varchar(80) DEFAULT NULL,
   `unit` varchar(50) DEFAULT NULL,
@@ -135,6 +136,21 @@ CREATE TABLE `requisition_items` (
   `price` decimal(12,2) NOT NULL DEFAULT 0.00,
   `value` decimal(12,2) NOT NULL DEFAULT 0.00,
   `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `requisition_dispatch_requests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `requisition_id` int(11) NOT NULL,
+  `requisition_item_id` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `inventory_item_id` int(11) NOT NULL,
+  `quantity` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  `requested_at` datetime DEFAULT current_timestamp(),
+  `decided_at` datetime DEFAULT NULL,
+  `decided_by` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_dispatch_item` (`requisition_item_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `requisition_participants` (
@@ -487,6 +503,10 @@ CREATE TABLE `inventory_items` (
   `name` varchar(150) NOT NULL,
   `category_id` int(11) NOT NULL,
   `unit` varchar(50) NOT NULL,
+  `supplier_name` varchar(150) DEFAULT NULL,
+  `supplier_contact` varchar(150) DEFAULT NULL,
+  `supplier_phone` varchar(50) DEFAULT NULL,
+  `supplier_address` varchar(255) DEFAULT NULL,
   `cost_price` decimal(12,2) DEFAULT 0.00,
   `selling_price` decimal(12,2) DEFAULT 0.00,
   `opening_stock` int(11) DEFAULT 0,
@@ -975,7 +995,8 @@ INSERT INTO `roles` (`id`, `name`, `description`, `created_at`) VALUES
 (47, 'Logistics Officer', 'Logistics Officer access role', '2026-08-18 11:44:51'),
 (48, 'Department Head', 'Department Head access role', '2026-08-18 11:44:51'),
 (49, 'Human Resource Manager', 'Human Resource Manager access role', '2026-08-18 11:44:51'),
-(50, 'General Manager', 'General Manager access role', '2026-08-18 11:44:51');
+(50, 'General Manager', 'General Manager access role', '2026-08-18 11:44:51'),
+(51, 'Head Store Keeper', 'Head Store Keeper access role', '2026-08-18 11:44:51');
 
 -- --------------------------------------------------------
 

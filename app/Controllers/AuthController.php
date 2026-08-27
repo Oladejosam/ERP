@@ -216,7 +216,7 @@ class AuthController extends Controller
         if ($name === 'deputy general manager special services' || $name === 'deputy general manager finance' || $name === 'internal auditor') {
             return '/portal/admin';
         }
-        if ($name === 'head store' || $name === 'head mechanic') {
+        if ($name === 'head store' || $name === 'head store keeper' || $name === 'head mechanic') {
             return '/portal/admin';
         }
         if ($name === 'human resource manager' || $name === 'human resource officer') {

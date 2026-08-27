@@ -122,7 +122,7 @@ class EmployeeModel extends Model
 
     public function getEmployees(): array
     {
-        $stmt = $this->query('SELECT * FROM employees WHERE company_id = ? ORDER BY created_at DESC, id DESC', [$this->currentCompanyId()]);
+        $stmt = $this->query('SELECT e.*, r.name AS role_name FROM employees e LEFT JOIN users u ON u.employee_id = e.id AND (u.company_id = e.company_id OR u.company_id IS NULL) LEFT JOIN roles r ON r.id = u.role_id WHERE e.company_id = ? ORDER BY e.created_at DESC, e.id DESC', [$this->currentCompanyId()]);
         return $stmt->fetchAll();
     }
 
@@ -212,12 +212,19 @@ class EmployeeModel extends Model
         if (!$department) {
             throw new InvalidArgumentException('Department not found.');
         }
-        $assigned = $this->query('SELECT COUNT(*) FROM employees WHERE company_id = ? AND department = ?', [$this->currentCompanyId(), $department['name']])->fetchColumn();
-        if ((int)$assigned > 0) {
-            throw new InvalidArgumentException('This department still has assigned employees. Reassign them before deleting it.');
+        $companyId = $this->currentCompanyId();
+        $this->db->beginTransaction();
+        try {
+            $this->query('UPDATE employees SET department = "" WHERE company_id = ? AND department = ?', [$companyId, $department['name']]);
+            $this->query('DELETE FROM departments WHERE id = ? AND company_id = ?', [$departmentId, $companyId]);
+            $this->query('DELETE FROM department_roles WHERE department_id = ? AND company_id = ?', [$departmentId, $companyId]);
+            $this->db->commit();
+        } catch (Throwable $exception) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $exception;
         }
-        $this->query('DELETE FROM departments WHERE id = ? AND company_id = ?', [$departmentId, $this->currentCompanyId()]);
-        $this->query('DELETE FROM department_roles WHERE department_id = ? AND company_id = ?', [$departmentId, $this->currentCompanyId()]);
     }
 
     public function getEmployeeById(int $id): ?array

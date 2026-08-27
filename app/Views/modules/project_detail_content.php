@@ -1,6 +1,7 @@
 <?php
 $statusLabel = ucwords(str_replace('_', ' ', (string)($project['status'] ?? 'planned')));
 $progress = max(0, min(100, (int)($project['progress_percent'] ?? 0)));
+$schedule = $schedule ?? [];
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -42,9 +43,37 @@ $progress = max(0, min(100, (int)($project['progress_percent'] ?? 0)));
             <div class="card-body p-4">
                 <h5 class="fw-bold mb-3">Progress</h5>
                 <div class="progress mb-2" style="height: 24px"><div class="progress-bar" style="width: <?php echo $progress; ?>%" aria-valuenow="<?php echo $progress; ?>" aria-valuemin="0" aria-valuemax="100"><?php echo $progress; ?>%</div></div>
-                <span class="text-muted small">Current completion</span>
+                <span class="text-muted small"><?php echo !empty($project['progress_from_schedule']) ? 'Calculated from schedule activities' : 'Current completion'; ?></span>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 mt-4">
+    <div class="card-body p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div><h5 class="fw-bold mb-1">Project Schedule</h5><p class="text-muted mb-0">Plan activities and update progress as the work moves forward.</p></div>
+        </div>
+        <form method="post" action="/ERP/public/projects/schedule/save" class="row g-2 align-items-end mb-4">
+            <input type="hidden" name="project_id" value="<?php echo (int)$project['id']; ?>">
+            <div class="col-lg-3 col-md-6"><label class="form-label">Activity</label><input class="form-control" name="task_name" placeholder="e.g. Foundation works" maxlength="180" required></div>
+            <div class="col-lg-2 col-md-3"><label class="form-label">Start date</label><input class="form-control" type="date" name="schedule_start_date" required></div>
+            <div class="col-lg-2 col-md-3"><label class="form-label">End date</label><input class="form-control" type="date" name="schedule_end_date" required></div>
+            <div class="col-lg-2 col-md-4"><label class="form-label">Status</label><select class="form-select" name="schedule_status"><option value="planned">Planned</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="on_hold">On hold</option></select></div>
+            <div class="col-lg-1 col-md-4"><label class="form-label">Progress %</label><input class="form-control" type="number" name="schedule_progress_percent" min="0" max="100" value="0"></div>
+            <div class="col-lg-2 col-md-4"><label class="form-label">Assigned to</label><input class="form-control" name="assigned_to" maxlength="150" placeholder="Team / person"></div>
+            <div class="col-12"><label class="form-label">Notes</label><input class="form-control" name="schedule_notes" maxlength="1000" placeholder="Dependencies, deliverables, or remarks"></div>
+            <div class="col-12"><button class="btn btn-primary" type="submit"><i class="bi bi-calendar-plus me-1"></i>Add schedule activity</button></div>
+        </form>
+        <?php if (empty($schedule)): ?>
+            <p class="text-muted mb-0">No schedule activities have been added.</p>
+        <?php else: ?>
+            <div class="table-responsive"><table class="table table-striped align-middle mb-0"><thead><tr><th>Activity</th><th>Dates</th><th>Progress</th><th>Assigned to</th><th>Status</th><th>Action</th></tr></thead><tbody>
+                <?php foreach ($schedule as $scheduleItem): $scheduleId = (int)$scheduleItem['id']; ?><tr><td><span class="fw-semibold"><?php echo htmlspecialchars($scheduleItem['task_name']); ?></span><?php if (!empty($scheduleItem['notes'])): ?><small class="text-muted d-block"><?php echo htmlspecialchars($scheduleItem['notes']); ?></small><?php endif; ?></td><td><?php echo htmlspecialchars($scheduleItem['start_date'] . ' to ' . $scheduleItem['end_date']); ?></td><td style="min-width: 140px"><div class="progress" role="progressbar" aria-valuenow="<?php echo (int)$scheduleItem['progress_percent']; ?>" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width: <?php echo (int)$scheduleItem['progress_percent']; ?>%"><?php echo (int)$scheduleItem['progress_percent']; ?>%</div></div></td><td><?php echo htmlspecialchars($scheduleItem['assigned_to'] ?: 'Not assigned'); ?></td><td><?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $scheduleItem['status']))); ?></td><td><button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#editSchedule<?php echo $scheduleId; ?>"><i class="bi bi-pencil me-1"></i>Edit</button></td></tr>
+                <div class="modal fade" id="editSchedule<?php echo $scheduleId; ?>" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Edit schedule activity</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><form method="post" action="/ERP/public/projects/schedule/save"><div class="modal-body"><input type="hidden" name="project_id" value="<?php echo (int)$project['id']; ?>"><input type="hidden" name="schedule_id" value="<?php echo $scheduleId; ?>"><div class="row g-3"><div class="col-md-8"><label class="form-label">Activity</label><input class="form-control" name="task_name" value="<?php echo htmlspecialchars($scheduleItem['task_name']); ?>" maxlength="180" required></div><div class="col-md-4"><label class="form-label">Assigned to</label><input class="form-control" name="assigned_to" value="<?php echo htmlspecialchars($scheduleItem['assigned_to'] ?? ''); ?>" maxlength="150"></div><div class="col-md-4"><label class="form-label">Start date</label><input class="form-control" type="date" name="schedule_start_date" value="<?php echo htmlspecialchars($scheduleItem['start_date']); ?>" required></div><div class="col-md-4"><label class="form-label">End date</label><input class="form-control" type="date" name="schedule_end_date" value="<?php echo htmlspecialchars($scheduleItem['end_date']); ?>" required></div><div class="col-md-2"><label class="form-label">Status</label><select class="form-select" name="schedule_status"><?php foreach (['planned' => 'Planned', 'in_progress' => 'In progress', 'completed' => 'Completed', 'on_hold' => 'On hold'] as $statusKey => $statusName): ?><option value="<?php echo $statusKey; ?>" <?php echo $scheduleItem['status'] === $statusKey ? 'selected' : ''; ?>><?php echo $statusName; ?></option><?php endforeach; ?></select></div><div class="col-md-2"><label class="form-label">Progress %</label><input class="form-control" type="number" name="schedule_progress_percent" min="0" max="100" value="<?php echo (int)$scheduleItem['progress_percent']; ?>"></div><div class="col-12"><label class="form-label">Notes</label><textarea class="form-control" name="schedule_notes" rows="3" maxlength="1000"><?php echo htmlspecialchars($scheduleItem['notes'] ?? ''); ?></textarea></div></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Save changes</button></div></form></div></div></div>
+                <?php endforeach; ?>
+            </tbody></table></div>
+        <?php endif; ?>
     </div>
 </div>
 

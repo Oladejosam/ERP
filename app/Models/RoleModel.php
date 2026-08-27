@@ -25,6 +25,7 @@ class RoleModel extends Model
             $this->query('ALTER TABLE roles ADD UNIQUE KEY unique_role_company_name (company_id, name)');
         } catch (Throwable $exception) {
         }
+        $this->query('ALTER TABLE users MODIFY COLUMN role_id INT NULL');
         $this->query('ALTER TABLE management_roles ADD COLUMN IF NOT EXISTS company_id INT NULL AFTER id');
         foreach (['name', 'unique_management_role_name'] as $indexName) {
             try {
@@ -50,8 +51,10 @@ class RoleModel extends Model
             'Finance Manager',
             'HR Manager',
             'Site Engineer',
+            'Site Quantity Surveyor',
             'Procurement Officer',
             'Logistics Officer',
+            'Head Store Keeper',
             'Accountant',
             'Staff',
             'Department Head',
@@ -132,16 +135,25 @@ class RoleModel extends Model
 
     public function deleteRole(int $roleId): void
     {
-        $role = $this->query('SELECT company_id FROM roles WHERE id = ? LIMIT 1', [$roleId])->fetch();
+        $role = $this->query('SELECT company_id, name FROM roles WHERE id = ? LIMIT 1', [$roleId])->fetch();
         if (!$role || $role['company_id'] === null || (int)$role['company_id'] !== $this->currentCompanyId()) {
             throw new InvalidArgumentException('Only roles created for this company can be deleted.');
         }
-        $usedByUsers = (int)$this->query('SELECT COUNT(*) FROM users WHERE role_id = ?', [$roleId])->fetchColumn();
-        $usedByDepartments = (int)$this->query('SELECT COUNT(*) FROM departments WHERE role_id = ?', [$roleId])->fetchColumn();
-        if ($usedByUsers > 0 || $usedByDepartments > 0) {
-            throw new InvalidArgumentException('This role is currently assigned and cannot be deleted.');
+        $this->db->beginTransaction();
+        try {
+            $this->query('UPDATE users SET role_id = NULL WHERE role_id = ?', [$roleId]);
+            $this->query('UPDATE departments SET role_id = NULL, head_role_id = NULL WHERE company_id = ? AND (role_id = ? OR head_role_id = ?)', [$this->currentCompanyId(), $roleId, $roleId]);
+            $this->query('DELETE FROM department_roles WHERE company_id = ? AND role_id = ?', [$this->currentCompanyId(), $roleId]);
+            $this->query('UPDATE workflow_role_links SET parent_role_id = NULL WHERE company_id = ? AND parent_role_id = ?', [$this->currentCompanyId(), $roleId]);
+            $this->query('DELETE FROM workflow_role_links WHERE company_id = ? AND role_id = ?', [$this->currentCompanyId(), $roleId]);
+            $this->query('DELETE FROM roles WHERE id = ? AND company_id = ?', [$roleId, $this->currentCompanyId()]);
+            $this->db->commit();
+        } catch (Throwable $exception) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $exception;
         }
-        $this->query('DELETE FROM roles WHERE id = ?', [$roleId]);
     }
 
     public function getManagementRoles(): array

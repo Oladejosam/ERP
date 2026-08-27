@@ -79,9 +79,17 @@
             <div class="card-body">
                 <h5 class="fw-bold mb-3">Recent Activity</h5>
                 <ul class="list-group list-group-flush">
-                    <li class="list-group-item px-0">Invoice INV-003 was sent to Apex Builders Ltd.</li>
-                    <li class="list-group-item px-0">Inventory reorder alert triggered for cement stock.</li>
-                    <li class="list-group-item px-0">Payroll batch for June was approved.</li>
+                    <?php if (empty($recentActivities)): ?>
+                        <li class="list-group-item px-0 text-muted">No recent activity related to this account.</li>
+                    <?php else: ?>
+                        <?php foreach (array_slice($recentActivities, 0, 3) as $activity): ?>
+                            <li class="list-group-item px-0">
+                                <a class="text-decoration-none" href="/ERP/public/requisition/view?id=<?php echo (int)$activity['requisition_id']; ?>"><?php echo htmlspecialchars($activity['activity_text']); ?></a>
+                                <div class="small text-muted"><?php echo htmlspecialchars($activity['occurred_at']); ?></div>
+                            </li>
+                        <?php endforeach; ?>
+                        <?php if (count($recentActivities) > 3): ?><li class="list-group-item px-0"><a class="small" href="/ERP/public/requisition">See more activity</a></li><?php endif; ?>
+                    <?php endif; ?>
                 </ul>
             </div>
         </div>
@@ -98,6 +106,20 @@
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <span>Low stock alerts</span>
                     <span class="badge bg-danger">2</span>
+                </div>
+                <div class="border-top mt-3 pt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span>Requisitions tagged to you</span>
+                        <span class="badge <?php echo !empty($taggedRequisitions) ? 'bg-primary' : 'bg-secondary'; ?>"><?php echo count($taggedRequisitions ?? []); ?></span>
+                    </div>
+                    <?php if (!empty($taggedRequisitions)): ?>
+                        <?php foreach (array_slice($taggedRequisitions, 0, 3) as $taggedRequisition): ?>
+                            <a class="d-block small text-decoration-none mb-1" href="/ERP/public/requisition/view?id=<?php echo (int)$taggedRequisition['id']; ?>"><i class="bi bi-arrow-right-circle me-1"></i><?php echo htmlspecialchars($taggedRequisition['title']); ?></a>
+                        <?php endforeach; ?>
+                        <?php if (count($taggedRequisitions) > 3): ?><a class="small" href="/ERP/public/requisition">View all tagged requisitions</a><?php endif; ?>
+                    <?php else: ?>
+                        <div class="small text-muted">No pending requisitions require your attention.</div>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>

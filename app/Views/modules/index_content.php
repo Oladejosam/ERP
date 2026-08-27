@@ -9,6 +9,7 @@
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/management/hr">HR</a></div>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/management/procurement">Procurement</a></div>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/modules/projects">Projects</a></div>
+            <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/modules/contract-admin"><i class="bi bi-file-earmark-check me-1"></i>Contract Admin</a></div>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/management/sales">Sales</a></div>
         </div>
     </div>

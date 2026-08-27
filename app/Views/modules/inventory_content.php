@@ -74,6 +74,22 @@
                             <input class="form-control" name="unit" value="pcs">
                         </div>
                         <div class="col-md-6">
+                            <label class="form-label">Supplier Name</label>
+                            <input class="form-control" name="supplier_name">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Supplier Contact Person</label>
+                            <input class="form-control" name="supplier_contact">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Supplier Phone</label>
+                            <input class="form-control" name="supplier_phone" type="tel">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Supplier Address</label>
+                            <input class="form-control" name="supplier_address">
+                        </div>
+                        <div class="col-md-6">
                             <label class="form-label">Cost Price</label>
                             <input type="number" step="0.01" class="form-control" name="cost_price" value="0">
                         </div>

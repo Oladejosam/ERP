@@ -6,6 +6,8 @@ declare(strict_types=1);
 
 require_once APP_ROOT . '/app/Controllers/BaseController.php';
 require_once APP_ROOT . '/app/Models/CompanyModel.php';
+require_once APP_ROOT . '/app/Models/RequisitionModel.php';
+require_once APP_ROOT . '/app/Models/ProjectModel.php';
 
 class HomeController extends BaseController
 {
@@ -17,6 +19,10 @@ class HomeController extends BaseController
         }
 
         $this->requireAccess();
+        $projectModel = new ProjectModel();
+        if ($projectModel->getQuantitySurveyorProjects((int)($_SESSION['user']['employee_id'] ?? 0)) !== []) {
+            $this->redirect('/portal/site-quantity-surveyor');
+        }
         $portalRoute = $this->portalRouteForRole();
         if ($portalRoute !== '/') {
             $this->redirect($portalRoute);
@@ -36,6 +42,10 @@ class HomeController extends BaseController
         $purchaseStmt = $pdo->prepare('SELECT COALESCE(SUM(total_amount), 0) FROM purchase_orders WHERE company_id = ?');
         $purchaseStmt->execute([$companyId]);
         $purchaseTotal = (float)$purchaseStmt->fetchColumn();
+        $requisitionModel = new RequisitionModel();
+        $currentUserId = (int)($_SESSION['user']['id'] ?? 0);
+        $taggedRequisitions = $requisitionModel->getPendingTaggedForUser($currentUserId);
+        $recentActivities = $requisitionModel->getRecentActivityForUser($currentUserId);
 
         $this->view('dashboard/index', [
             'title' => 'Dashboard',
@@ -45,6 +55,8 @@ class HomeController extends BaseController
             'revenue' => $invoiceTotal,
             'expenses' => $purchaseTotal,
             'profit' => max(0.0, $invoiceTotal - $purchaseTotal),
+            'taggedRequisitions' => $taggedRequisitions,
+            'recentActivities' => $recentActivities,
         ]);
     }
 

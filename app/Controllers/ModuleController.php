@@ -10,6 +10,7 @@ require_once APP_ROOT . '/app/Models/PayrollModel.php';
 require_once APP_ROOT . '/app/Models/ProjectModel.php';
 require_once APP_ROOT . '/app/Models/EmployeeModel.php';
 require_once APP_ROOT . '/app/Models/WorkflowModel.php';
+require_once APP_ROOT . '/app/Models/ContractAdminModel.php';
 
 class ModuleController extends BaseController
 {
@@ -18,6 +19,7 @@ class ModuleController extends BaseController
     private ProjectModel $projectModel;
     private EmployeeModel $employeeModel;
     private WorkflowModel $workflowModel;
+    private ContractAdminModel $contractAdminModel;
 
     public function __construct()
     {
@@ -26,6 +28,7 @@ class ModuleController extends BaseController
         $this->projectModel = new ProjectModel();
         $this->employeeModel = new EmployeeModel();
         $this->workflowModel = new WorkflowModel();
+        $this->contractAdminModel = new ContractAdminModel();
     }
 
     public function index(): void
@@ -94,6 +97,117 @@ class ModuleController extends BaseController
         $this->view('modules/inventory', ['title' => 'Inventory', 'items' => $items, 'categories' => $categories]);
     }
 
+    public function contractAdmin(): void
+    {
+        $this->requireCompanyModule('contract_admin');
+        $contracts = $this->contractAdminModel->getContracts();
+        $events = [];
+        $documents = [];
+        foreach ($contracts as $contract) {
+            $events[(int)$contract['id']] = $this->contractAdminModel->getEvents((int)$contract['id']);
+            $documents[(int)$contract['id']] = $this->contractAdminModel->getDocuments((int)$contract['id']);
+        }
+        $this->view('modules/contract_admin', [
+            'title' => 'Contract Admin',
+            'contracts' => $contracts,
+            'events' => $events,
+            'documents' => $documents,
+        ]);
+    }
+
+    public function saveContract(): void
+    {
+        $this->requireCompanyModule('contract_admin');
+        try {
+            $this->contractAdminModel->saveContract($_POST, (int)($_SESSION['user']['id'] ?? 0) ?: null);
+            $_SESSION['contract_admin_flash'] = 'Contract record saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['contract_admin_flash'] = 'Unable to save contract: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/contract-admin');
+    }
+
+    public function addContractEvent(): void
+    {
+        $this->requireCompanyModule('contract_admin');
+        $contractId = (int)($_POST['contract_id'] ?? 0);
+        try {
+            $this->contractAdminModel->addEvent($contractId, $_POST, (int)($_SESSION['user']['id'] ?? 0) ?: null);
+            $_SESSION['contract_admin_flash'] = 'Process milestone recorded.';
+        } catch (Throwable $exception) {
+            $_SESSION['contract_admin_flash'] = 'Unable to record milestone: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/contract-admin');
+    }
+
+    public function uploadContractDocument(): void
+    {
+        $this->requireCompanyModule('contract_admin');
+        $contractId = (int)($_POST['contract_id'] ?? 0);
+        try {
+            $file = $_FILES['contract_file'] ?? null;
+            if (!$file || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                throw new RuntimeException('Please select a contract document to upload.');
+            }
+            if (($file['size'] ?? 0) > 10 * 1024 * 1024) {
+                throw new RuntimeException('Each contract document must be 10 MB or smaller.');
+            }
+            $allowedTypes = [
+                'application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/plain',
+                'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ];
+            $allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'txt', 'doc', 'docx', 'xls', 'xlsx'];
+            $originalName = basename((string)($file['name'] ?? ''));
+            $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+            $mimeType = (new finfo(FILEINFO_MIME_TYPE))->file((string)$file['tmp_name']);
+            if (!in_array($extension, $allowedExtensions, true) || !in_array($mimeType, $allowedTypes, true)) {
+                throw new RuntimeException('Contract documents must be PDF, Word, Excel, image, or text files.');
+            }
+            $uploadDirectory = APP_ROOT . '/public/uploads/contracts/' . $contractId;
+            if (!is_dir($uploadDirectory) && !mkdir($uploadDirectory, 0775, true) && !is_dir($uploadDirectory)) {
+                throw new RuntimeException('The contract document directory could not be created.');
+            }
+            $storedName = bin2hex(random_bytes(16)) . '.' . $extension;
+            $storedPath = $uploadDirectory . '/' . $storedName;
+            if (!move_uploaded_file((string)$file['tmp_name'], $storedPath)) {
+                throw new RuntimeException('The contract document could not be saved.');
+            }
+            try {
+                $this->contractAdminModel->addDocument($contractId, (string)($_POST['document_date'] ?? ''), (string)($_POST['label'] ?? ''), $originalName, $storedName, (string)$mimeType, (int)$file['size'], (int)($_SESSION['user']['id'] ?? 0) ?: null);
+            } catch (Throwable $exception) {
+                @unlink($storedPath);
+                throw $exception;
+            }
+            $_SESSION['contract_admin_flash'] = 'Contract document uploaded and filed by date.';
+        } catch (Throwable $exception) {
+            $_SESSION['contract_admin_flash'] = 'Unable to upload document: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/contract-admin');
+    }
+
+    public function contractDocumentDownload(): void
+    {
+        $this->requireCompanyModule('contract_admin');
+        $document = $this->contractAdminModel->getDocument((int)($_GET['id'] ?? 0));
+        if (!$document) {
+            http_response_code(404);
+            echo 'Document not found.';
+            return;
+        }
+        $path = APP_ROOT . '/public/uploads/contracts/' . (int)$document['contract_id'] . '/' . basename((string)$document['stored_name']);
+        if (!is_file($path)) {
+            http_response_code(404);
+            echo 'Document file not found.';
+            return;
+        }
+        header('Content-Type: ' . (string)$document['file_type']);
+        header('Content-Disposition: attachment; filename="' . str_replace('"', '', basename((string)$document['original_name'])) . '"');
+        header('Content-Length: ' . (string)filesize($path));
+        readfile($path);
+        exit;
+    }
+
     public function projects(): void
     {
         $this->requireCompanyModule('projects');
@@ -118,6 +232,7 @@ class ModuleController extends BaseController
             'project' => $project,
             'documents' => $this->projectModel->getProjectDocuments($projectId),
             'assignments' => $this->projectModel->getProjectAssignments($projectId),
+            'schedule' => $this->projectModel->getProjectSchedule($projectId),
             'employees' => $this->employeeModel->getEmployees(),
             'budgets' => $this->projectModel->getProjectBudgets($projectId),
             'deletedBudgets' => $this->projectModel->getDeletedProjectBudgets($projectId),
@@ -133,6 +248,19 @@ class ModuleController extends BaseController
             $_SESSION['project_flash'] = 'Budget line added successfully.';
         } catch (Throwable $exception) {
             $_SESSION['project_flash'] = 'Unable to add budget line: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/projects/view?id=' . $projectId);
+    }
+
+    public function saveProjectSchedule(): void
+    {
+        $this->requireCompanyModule('projects');
+        $projectId = (int)($_POST['project_id'] ?? 0);
+        try {
+            $this->projectModel->saveSchedule($_POST);
+            $_SESSION['project_flash'] = 'Project schedule saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['project_flash'] = 'Unable to save schedule: ' . $exception->getMessage();
         }
         $this->redirect('/modules/projects/view?id=' . $projectId);
     }

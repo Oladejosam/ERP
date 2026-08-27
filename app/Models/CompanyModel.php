@@ -44,6 +44,16 @@ class CompanyModel extends Model
             )'
         );
         $this->query("INSERT IGNORE INTO company_modules (company_id, module_key) SELECT id, 'requisition' FROM companies WHERE is_active = 1");
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS employee_module_access (
+                company_id INT NOT NULL,
+                employee_id INT NOT NULL,
+                module_key VARCHAR(50) NOT NULL,
+                PRIMARY KEY (company_id, employee_id, module_key),
+                FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+                FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+            )'
+        );
 
         $this->query(
             'INSERT INTO companies (id, company_name, logo_path, theme_color)
@@ -120,6 +130,7 @@ class CompanyModel extends Model
             'procurement' => 'Procurement',
             'requisition' => 'Requisition',
             'projects' => 'Projects',
+            'contract_admin' => 'Contract Admin',
             'reports' => 'Reports',
         ];
     }
@@ -156,6 +167,85 @@ class CompanyModel extends Model
         }
         $stmt = $this->query('SELECT 1 FROM company_modules WHERE company_id = ? AND module_key = ? LIMIT 1', [$this->currentCompanyId(), $moduleKey]);
         return (bool)$stmt->fetchColumn();
+    }
+
+    public function hasEmployeeModuleAccess(int $employeeId, string $moduleKey): bool
+    {
+        if ($moduleKey === 'dashboard') {
+            return true;
+        }
+        $companyId = $this->currentCompanyId();
+        $configured = $this->query('SELECT 1 FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key = "__configured__" LIMIT 1', [$companyId, $employeeId])->fetchColumn();
+        if ((int)$configured === 0) {
+            return $this->hasModuleAccess($moduleKey);
+        }
+        return (bool)$this->query('SELECT 1 FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key = ? LIMIT 1', [$companyId, $employeeId, $moduleKey])->fetchColumn();
+    }
+
+    public function getEmployeeModuleAccess(int $employeeId): array
+    {
+        return array_values(array_map(static fn (array $row): string => (string)$row['module_key'], $this->query('SELECT module_key FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key <> "__configured__" ORDER BY module_key ASC', [$this->currentCompanyId(), $employeeId])->fetchAll()));
+    }
+
+    public function hasEmployeeModuleConfiguration(int $employeeId): bool
+    {
+        return (bool)$this->query('SELECT 1 FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key = "__configured__" LIMIT 1', [$this->currentCompanyId(), $employeeId])->fetchColumn();
+    }
+
+    public function saveEmployeeModuleAccess(int $employeeId, array $modules): void
+    {
+        $companyId = $this->currentCompanyId();
+        if (!$this->query('SELECT 1 FROM employees WHERE id = ? AND company_id = ? LIMIT 1', [$employeeId, $companyId])->fetchColumn()) {
+            throw new InvalidArgumentException('The selected employee does not belong to this company.');
+        }
+        $allowed = array_keys(self::availableModules());
+        $modules = array_values(array_intersect($allowed, array_map('strval', $modules)));
+        $this->query('DELETE FROM employee_module_access WHERE company_id = ? AND employee_id = ?', [$companyId, $employeeId]);
+        $this->query('INSERT INTO employee_module_access (company_id, employee_id, module_key) VALUES (?, ?, "__configured__")', [$companyId, $employeeId]);
+        foreach ($modules as $module) {
+            $this->query('INSERT INTO employee_module_access (company_id, employee_id, module_key) VALUES (?, ?, ?)', [$companyId, $employeeId, $module]);
+        }
+    }
+
+    public function getManagedEmployeeIds(int $managerEmployeeId, int $managerRoleId, string $managerRoleName): array
+    {
+        $companyId = $this->currentCompanyId();
+        $managerRoleName = strtolower(trim($managerRoleName));
+        $isGlobalManager = in_array($managerRoleName, ['admin', 'hr manager', 'hr_manager', 'human resource manager', 'head of human resource', 'head of human resources', 'head hr', 'head of hr', 'super admin', 'superadministrator', 'super administrator'], true);
+        $topRole = $managerRoleId > 0 && !$this->query('SELECT 1 FROM workflow_role_links WHERE company_id = ? AND role_id = ? AND parent_role_id IS NOT NULL LIMIT 1', [$companyId, $managerRoleId])->fetchColumn();
+        $isDepartmentHead = $managerEmployeeId > 0 && (bool)$this->query('SELECT 1 FROM departments WHERE company_id = ? AND head_employee_id = ? LIMIT 1', [$companyId, $managerEmployeeId])->fetchColumn();
+        if (!$isGlobalManager && !$topRole && !$isDepartmentHead) {
+            return [];
+        }
+        $employees = $this->query(
+            'SELECT e.id, e.department, u.role_id FROM employees e LEFT JOIN users u ON u.employee_id = e.id AND (u.company_id = e.company_id OR u.company_id IS NULL) WHERE e.company_id = ? AND e.status = "active" ORDER BY e.department ASC, e.first_name ASC, e.last_name ASC',
+            [$companyId]
+        )->fetchAll();
+        if ($isGlobalManager || $topRole) {
+            return array_map(static fn (array $employee): int => (int)$employee['id'], $employees);
+        }
+        $department = $this->query('SELECT department FROM employees WHERE id = ? AND company_id = ? LIMIT 1', [$managerEmployeeId, $companyId])->fetchColumn();
+        $roleLinks = $this->query('SELECT role_id, parent_role_id FROM workflow_role_links WHERE company_id = ?', [$companyId])->fetchAll();
+        $children = [];
+        foreach ($roleLinks as $link) {
+            if ($link['parent_role_id'] !== null) {
+                $children[(int)$link['parent_role_id']][] = (int)$link['role_id'];
+            }
+        }
+        $descendants = [];
+        $queue = [$managerRoleId];
+        while ($queue !== []) {
+            $parent = array_shift($queue);
+            foreach ($children[$parent] ?? [] as $child) {
+                if (!in_array($child, $descendants, true)) {
+                    $descendants[] = $child;
+                    $queue[] = $child;
+                }
+            }
+        }
+        return array_values(array_map(static fn (array $employee): int => (int)$employee['id'], array_filter($employees, static function (array $employee) use ($managerEmployeeId, $department, $descendants): bool {
+            return (int)$employee['id'] !== $managerEmployeeId && (string)$employee['department'] === (string)$department && ($descendants === [] || in_array((int)($employee['role_id'] ?? 0), $descendants, true));
+        })));
     }
 
     public function selectCompany(int $companyId): bool
