@@ -100,6 +100,10 @@ class RequisitionModel extends Model
         );
         $this->query('ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS chat_closed_at DATETIME NULL');
         $this->query('ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS project_id INT NULL AFTER company_id');
+        $this->query('ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS urgent TINYINT(1) NOT NULL DEFAULT 0 AFTER project_id');
+        $this->query('ALTER TABLE requisition_dispatch_requests ADD COLUMN IF NOT EXISTS stock_type ENUM("free", "allocated") NULL AFTER quantity');
+        $this->query('ALTER TABLE requisition_dispatch_requests ADD COLUMN IF NOT EXISTS urgent TINYINT(1) NOT NULL DEFAULT 0 AFTER stock_type');
+        $this->query('ALTER TABLE requisition_dispatch_requests ADD COLUMN IF NOT EXISTS decision ENUM("pending", "issued", "purchase_required", "rejected") NOT NULL DEFAULT "pending" AFTER urgent');
     }
 
     public function getAll(?int $userId = null, bool $isSuperAdmin = false): array
@@ -144,8 +148,8 @@ class RequisitionModel extends Model
         $this->db->beginTransaction();
         try {
             $this->query(
-                'INSERT INTO requisitions (company_id, project_id, requested_by, requisition_date, title, trade, supplier, supplier_address, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)',
-                [$this->currentCompanyId(), $projectId > 0 ? $projectId : null, $requestedBy, $data['date'] ?: date('Y-m-d'), $title, trim((string)($data['trade'] ?? '')) ?: null, trim((string)($data['supplier'] ?? '')) ?: null, trim((string)($data['supplier_address'] ?? '')) ?: null]
+                'INSERT INTO requisitions (company_id, project_id, urgent, requested_by, requisition_date, title, trade, supplier, supplier_address, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)',
+                [$this->currentCompanyId(), $projectId > 0 ? $projectId : null, !empty($data['urgent']) ? 1 : 0, $requestedBy, $data['date'] ?: date('Y-m-d'), $title, trim((string)($data['trade'] ?? '')) ?: null, trim((string)($data['supplier'] ?? '')) ?: null, trim((string)($data['supplier_address'] ?? '')) ?: null]
             );
             $requisitionId = (int)$this->db->lastInsertId();
             $participantIds = array_values(array_unique(array_filter(array_map('intval', (array)($data['participant_ids'] ?? [])), static fn (int $id): bool => $id > 0)));
@@ -176,8 +180,8 @@ class RequisitionModel extends Model
                 );
                 if ($inventoryItem && ($quantityRequired > 0 || $quantityToPurchase > 0)) {
                     $this->query(
-                        'INSERT INTO requisition_dispatch_requests (requisition_id, requisition_item_id, company_id, inventory_item_id, quantity) VALUES (?, ?, ?, ?, ?)',
-                        [$requisitionId, (int)$this->db->lastInsertId(), $this->currentCompanyId(), (int)$inventoryItem['id'], number_format($quantityRequired > 0 ? $quantityRequired : $quantityToPurchase, 2, '.', '')]
+                        'INSERT INTO requisition_dispatch_requests (requisition_id, requisition_item_id, company_id, inventory_item_id, quantity, urgent) VALUES (?, ?, ?, ?, ?, ?)',
+                        [$requisitionId, (int)$this->db->lastInsertId(), $this->currentCompanyId(), (int)$inventoryItem['id'], number_format($quantityRequired > 0 ? $quantityRequired : $quantityToPurchase, 2, '.', ''), !empty($data['urgent']) ? 1 : 0]
                     );
                 }
             }
@@ -206,7 +210,7 @@ class RequisitionModel extends Model
     public function getPendingDispatchRequests(): array
     {
         return $this->query(
-            'SELECT d.*, r.title, r.requisition_date, ri.description, ri.item_code, ri.unit, u.name AS requester_name FROM requisition_dispatch_requests d INNER JOIN requisitions r ON r.id = d.requisition_id AND r.company_id = d.company_id INNER JOIN requisition_items ri ON ri.id = d.requisition_item_id INNER JOIN users u ON u.id = r.requested_by WHERE d.company_id = ? AND d.status = "pending" ORDER BY d.requested_at ASC, d.id ASC',
+            'SELECT d.*, r.title, r.requisition_date, r.urgent AS requisition_urgent, ri.description, ri.item_code, ri.unit, u.name AS requester_name, i.current_stock, i.free_stock, i.allocated_stock FROM requisition_dispatch_requests d INNER JOIN requisitions r ON r.id = d.requisition_id AND r.company_id = d.company_id INNER JOIN requisition_items ri ON ri.id = d.requisition_item_id INNER JOIN users u ON u.id = r.requested_by INNER JOIN inventory_items i ON i.id = d.inventory_item_id AND i.company_id = d.company_id WHERE d.company_id = ? AND r.status = "approved" AND d.status = "pending" ORDER BY d.requested_at ASC, d.id ASC',
             [$this->currentCompanyId()]
         )->fetchAll();
     }
@@ -220,13 +224,48 @@ class RequisitionModel extends Model
             if (!$dispatch) {
                 throw new InvalidArgumentException('This dispatch request has already been treated or was not found.');
             }
-            $inventory = $this->query('SELECT current_stock, name FROM inventory_items WHERE id = ? AND company_id = ? FOR UPDATE', [(int)$dispatch['inventory_item_id'], $companyId])->fetch();
-            if (!$inventory || (float)$inventory['current_stock'] < (float)$dispatch['quantity']) {
+            $inventory = $this->query('SELECT current_stock, free_stock, name FROM inventory_items WHERE id = ? AND company_id = ? FOR UPDATE', [(int)$dispatch['inventory_item_id'], $companyId])->fetch();
+            if (!$inventory || (float)$inventory['free_stock'] < (float)$dispatch['quantity']) {
                 throw new InvalidArgumentException('Insufficient stock to approve this dispatch.');
             }
-            $this->query('UPDATE inventory_items SET current_stock = current_stock - ? WHERE id = ? AND company_id = ?', [$dispatch['quantity'], (int)$dispatch['inventory_item_id'], $companyId]);
+            $this->query('UPDATE inventory_items SET free_stock = free_stock - ?, current_stock = free_stock + allocated_stock WHERE id = ? AND company_id = ?', [$dispatch['quantity'], (int)$dispatch['inventory_item_id'], $companyId]);
             $this->query('UPDATE requisition_dispatch_requests SET status = "approved", decided_at = NOW(), decided_by = ? WHERE id = ? AND status = "pending"', [$userId, $dispatchId]);
             $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [(int)$dispatch['requisition_id'], $companyId, $userId, 'Head Store approved dispatch of ' . $dispatch['quantity'] . ' unit(s) of ' . $inventory['name'] . '. Stock was deducted.']);
+            $this->db->commit();
+        } catch (Throwable $exception) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
+    public function decideDispatch(int $dispatchId, int $userId, string $stockType, bool $urgent): void
+    {
+        if (!in_array($stockType, ['free', 'allocated'], true)) {
+            throw new InvalidArgumentException('Select whether the issue is from free or allocated stock.');
+        }
+        $companyId = $this->currentCompanyId();
+        $this->db->beginTransaction();
+        try {
+            $dispatch = $this->query('SELECT d.*, r.title FROM requisition_dispatch_requests d INNER JOIN requisitions r ON r.id = d.requisition_id AND r.company_id = d.company_id WHERE d.id = ? AND d.company_id = ? AND r.status = "approved" AND d.status = "pending" FOR UPDATE', [$dispatchId, $companyId])->fetch();
+            if (!$dispatch) {
+                throw new InvalidArgumentException('This approved store request has already been treated or was not found.');
+            }
+            $inventory = $this->query('SELECT name, free_stock, allocated_stock FROM inventory_items WHERE id = ? AND company_id = ? FOR UPDATE', [(int)$dispatch['inventory_item_id'], $companyId])->fetch();
+            if (!$inventory) {
+                throw new InvalidArgumentException('The requested inventory item was not found.');
+            }
+            $quantity = (float)$dispatch['quantity'];
+            $available = (float)$inventory[$stockType . '_stock'];
+            if ($available < $quantity) {
+                throw new InvalidArgumentException('There is not enough ' . $stockType . ' stock to issue this request.');
+            }
+            $this->query('UPDATE inventory_items SET ' . $stockType . '_stock = ' . $stockType . '_stock - ?, current_stock = free_stock + allocated_stock WHERE id = ? AND company_id = ?', [$quantity, (int)$dispatch['inventory_item_id'], $companyId]);
+            $decision = $stockType === 'allocated' && $urgent ? 'purchase_required' : 'issued';
+            $this->query('UPDATE requisition_dispatch_requests SET stock_type = ?, urgent = ?, decision = ?, status = "approved", decided_at = NOW(), decided_by = ? WHERE id = ? AND status = "pending"', [$stockType, $urgent ? 1 : 0, $decision, $userId, $dispatchId]);
+            $message = $decision === 'purchase_required' ? 'Allocated stock issued urgently for ' . $inventory['name'] . '; procurement action is required.' : 'Store issued ' . $quantity . ' unit(s) of ' . $inventory['name'] . ' from ' . $stockType . ' stock.';
+            $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [(int)$dispatch['requisition_id'], $companyId, $userId, $message]);
             $this->db->commit();
         } catch (Throwable $exception) {
             if ($this->db->inTransaction()) {

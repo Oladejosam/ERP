@@ -29,6 +29,21 @@ $companyThemeColor = preg_match('/^#[0-9a-fA-F]{6}$/', (string)($companySettings
         :root { --theme-color: <?php echo htmlspecialchars($companyThemeColor); ?>; }
         .topbar { background: linear-gradient(135deg, #0f172a, var(--theme-color)); }
         .brand-logo { max-height: 38px; max-width: 180px; object-fit: contain; }
+        .menu-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+        .menu-toggle { color: #475569; border-color: #cbd5e1; flex-shrink: 0; }
+        .menu-toggle:hover { color: #0f172a; background: #edf3ff; border-color: #94a3b8; }
+        .sidebar-column, main { transition: flex-basis .2s ease, max-width .2s ease; }
+        .menu-collapsed .sidebar-column { flex: 0 0 76px; max-width: 76px; }
+        .menu-collapsed main { flex: 0 0 calc(100% - 76px); max-width: calc(100% - 76px); }
+        .menu-collapsed .sidebar-column .card-body { padding: .75rem .5rem !important; }
+        .menu-collapsed .sidebar-column h6,
+        .menu-collapsed .sidebar-column .nav-link { font-size: 0; text-align: center; }
+        .menu-collapsed .sidebar-column .nav-link { padding-left: .5rem; padding-right: .5rem; }
+        .menu-collapsed .sidebar-column .nav-link i { font-size: 1.1rem; margin-right: 0 !important; }
+        @media (max-width: 991.98px) {
+            .menu-collapsed .sidebar-column { display: none; }
+            .menu-collapsed main { flex-basis: 100%; max-width: 100%; }
+        }
     </style>
 </head>
 <body>
@@ -84,10 +99,15 @@ function isActiveNav(string $href, string $currentPath): bool {
     </nav>
 
     <div class="row g-0">
-        <aside class="sidebar-column col-lg-2 p-3">
+        <aside class="sidebar-column col-lg-2 p-3" id="mainMenu">
             <div class="card shadow-sm border-0 sidebar-card">
                 <div class="card-body p-3">
-                    <h6 class="text-uppercase text-muted mb-3">Main Menu</h6>
+                    <div class="menu-heading mb-3">
+                        <h6 class="text-uppercase text-muted mb-0">Main Menu</h6>
+                        <button type="button" class="btn btn-sm menu-toggle" id="menuToggle" aria-controls="mainMenu" aria-expanded="true" title="Collapse menu">
+                            <i class="bi bi-layout-sidebar-inset"></i><span class="visually-hidden">Toggle menu</span>
+                        </button>
+                    </div>
                     <ul class="nav flex-column gap-1">
                         <li><a class="nav-link<?php echo isActiveNav('/ERP/public/', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>
                         <?php if ($companyModel->hasModuleAccess('inventory')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/inventory', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/inventory"><i class="bi bi-box-seam me-2"></i>Inventory</a></li><?php endif; ?>
@@ -114,5 +134,26 @@ function isActiveNav(string $href, string $currentPath): bool {
     </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(() => {
+    const toggle = document.getElementById('menuToggle');
+    const page = document.querySelector('.container-fluid');
+    if (!toggle || !page) return;
+
+    const setMenuState = (collapsed) => {
+        page.classList.toggle('menu-collapsed', collapsed);
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+        toggle.setAttribute('title', collapsed ? 'Expand menu' : 'Collapse menu');
+        toggle.querySelector('i').className = collapsed ? 'bi bi-layout-sidebar' : 'bi bi-layout-sidebar-inset';
+    };
+
+    setMenuState(localStorage.getItem('erpMenuCollapsed') === 'true');
+    toggle.addEventListener('click', () => {
+        const collapsed = !page.classList.contains('menu-collapsed');
+        setMenuState(collapsed);
+        localStorage.setItem('erpMenuCollapsed', String(collapsed));
+    });
+})();
+</script>
 </body>
 </html>

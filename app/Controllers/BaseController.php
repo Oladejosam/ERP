@@ -48,7 +48,9 @@ class BaseController extends Controller
         $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
         if (!in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
             $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
-            if ($employeeId > 0 && !(new CompanyModel())->hasEmployeeModuleAccess($employeeId, $moduleKey)) {
+            $companyModel = new CompanyModel();
+            $storeAccess = in_array($moduleKey, ['inventory', 'requisition', 'procurement'], true) && $companyModel->isStoreDepartmentEmployee($employeeId);
+            if ($employeeId > 0 && !$storeAccess && !$companyModel->hasEmployeeModuleAccess($employeeId, $moduleKey)) {
                 $_SESSION['company_flash'] = 'This module is not enabled for your staff account.';
                 $this->redirect('/');
             }

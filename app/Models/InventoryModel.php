@@ -18,7 +18,13 @@ class InventoryModel extends Model
         foreach (['supplier_name' => 'VARCHAR(150) NULL', 'supplier_contact' => 'VARCHAR(150) NULL', 'supplier_phone' => 'VARCHAR(50) NULL', 'supplier_address' => 'VARCHAR(255) NULL'] as $column => $definition) {
             $this->query('ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS ' . $column . ' ' . $definition);
         }
+        $this->query('ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS free_stock INT NOT NULL DEFAULT 0 AFTER current_stock');
+        $this->query('ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS allocated_stock INT NOT NULL DEFAULT 0 AFTER free_stock');
+        $this->query('ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS allocation_status ENUM("free", "allocated") NOT NULL DEFAULT "free" AFTER allocated_stock');
+        $this->query('ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS allocated_to VARCHAR(255) NULL AFTER allocation_status');
+        $this->query('UPDATE inventory_items SET free_stock = current_stock WHERE free_stock = 0 AND allocated_stock = 0 AND current_stock > 0');
         $this->query('CREATE TABLE IF NOT EXISTS inventory_change_history (id INT PRIMARY KEY AUTO_INCREMENT, item_id INT NOT NULL, change_reason TEXT NOT NULL, before_data TEXT NOT NULL, after_data TEXT NOT NULL, changed_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE)');
+        $this->query('CREATE TABLE IF NOT EXISTS inventory_issues (id INT PRIMARY KEY AUTO_INCREMENT, company_id INT NOT NULL, item_id INT NOT NULL, issued_to VARCHAR(255) NOT NULL, quantity INT NOT NULL, stock_source ENUM("free", "allocated") NOT NULL, issued_date DATE NOT NULL, issued_by INT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (item_id) REFERENCES inventory_items(id) ON DELETE CASCADE)');
         foreach (['inventory_categories', 'inventory_items'] as $table) {
             $this->query('UPDATE `' . $table . '` SET company_id = 1 WHERE company_id IS NULL');
         }
@@ -30,9 +36,29 @@ class InventoryModel extends Model
         return $stmt->fetchAll();
     }
 
-    public function getItems(): array
+    public function getItems(string $search = '', string $searchField = 'all'): array
     {
-        $items = $this->query('SELECT i.*, c.name AS category_name FROM inventory_items i LEFT JOIN inventory_categories c ON c.id = i.category_id WHERE i.company_id = ? ORDER BY i.created_at DESC', [$this->currentCompanyId()]);
+        $search = trim($search);
+        $searchFields = [
+            'item_code' => 'i.item_code',
+            'name' => 'i.name',
+            'category' => 'c.name',
+            'supplier' => 'i.supplier_name',
+        ];
+        $sql = 'SELECT i.*, c.name AS category_name FROM inventory_items i LEFT JOIN inventory_categories c ON c.id = i.category_id WHERE i.company_id = ?';
+        $params = [$this->currentCompanyId()];
+        if ($search !== '') {
+            $searchTerm = '%' . $search . '%';
+            if (isset($searchFields[$searchField])) {
+                $sql .= ' AND ' . $searchFields[$searchField] . ' LIKE ?';
+                $params[] = $searchTerm;
+            } else {
+                $sql .= ' AND (i.item_code LIKE ? OR i.name LIKE ? OR c.name LIKE ? OR i.supplier_name LIKE ?)';
+                $params = array_merge($params, [$searchTerm, $searchTerm, $searchTerm, $searchTerm]);
+            }
+        }
+        $sql .= ' ORDER BY i.created_at DESC';
+        $items = $this->query($sql, $params);
         return $items->fetchAll();
     }
 
@@ -61,6 +87,53 @@ class InventoryModel extends Model
     {
         $stmt = $this->query('SELECT * FROM inventory_change_history WHERE item_id = ? ORDER BY changed_at DESC', [$id]);
         return $stmt->fetchAll();
+    }
+
+    public function getItemIssueHistory(int $id): array
+    {
+        return $this->query(
+            'SELECT ii.*, u.id AS issuer_user_id, COALESCE(e.id, u.id) AS issuer_id, u.name AS issuer_name FROM inventory_issues ii LEFT JOIN users u ON u.id = ii.issued_by LEFT JOIN employees e ON e.id = u.employee_id AND e.company_id = ii.company_id WHERE ii.item_id = ? AND ii.company_id = ? ORDER BY ii.issued_date DESC, ii.id DESC',
+            [$id, $this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function issueItem(int $itemId, string $issuedTo, int $quantity, string $issuedDate, string $stockSource, ?int $issuedBy): void
+    {
+        $issuedTo = trim($issuedTo);
+        if ($issuedTo === '') {
+            throw new InvalidArgumentException('Specify who or where the item is being issued to.');
+        }
+        if ($quantity <= 0) {
+            throw new InvalidArgumentException('Quantity issued must be greater than zero.');
+        }
+        if (!in_array($stockSource, ['free', 'allocated'], true)) {
+            throw new InvalidArgumentException('Select a valid stock source.');
+        }
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', trim($issuedDate));
+        $dateErrors = DateTimeImmutable::getLastErrors();
+        if ($date === false || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0))) {
+            throw new InvalidArgumentException('Enter a valid issue date.');
+        }
+        $companyId = $this->currentCompanyId();
+        $this->db->beginTransaction();
+        try {
+            $item = $this->query('SELECT name, free_stock, allocated_stock FROM inventory_items WHERE id = ? AND company_id = ? FOR UPDATE', [$itemId, $companyId])->fetch();
+            if (!$item) {
+                throw new InvalidArgumentException('Inventory item not found.');
+            }
+            if ((int)$item[$stockSource . '_stock'] < $quantity) {
+                throw new InvalidArgumentException('There is not enough ' . $stockSource . ' stock available.');
+            }
+            $this->query('UPDATE inventory_items SET ' . $stockSource . '_stock = ' . $stockSource . '_stock - ?, current_stock = free_stock + allocated_stock WHERE id = ? AND company_id = ?', [$quantity, $itemId, $companyId]);
+            $this->query('INSERT INTO inventory_issues (company_id, item_id, issued_to, quantity, stock_source, issued_date, issued_by) VALUES (?, ?, ?, ?, ?, ?, ?)', [$companyId, $itemId, $issuedTo, $quantity, $stockSource, $date->format('Y-m-d'), $issuedBy]);
+            $this->query('INSERT INTO inventory_change_history (item_id, change_reason, before_data, after_data, changed_at) VALUES (?, ?, ?, ?, NOW())', [$itemId, 'Issued ' . $quantity . ' unit(s) to ' . $issuedTo . ' from ' . $stockSource . ' stock.', json_encode($item), json_encode($this->query('SELECT current_stock, free_stock, allocated_stock FROM inventory_items WHERE id = ?', [$itemId])->fetch())]);
+            $this->db->commit();
+        } catch (Throwable $exception) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $exception;
+        }
     }
 
     public function createCategory(string $name): int
@@ -105,10 +178,15 @@ class InventoryModel extends Model
         $supplierContact = trim((string)($data['supplier_contact'] ?? '')) ?: null;
         $supplierPhone = trim((string)($data['supplier_phone'] ?? '')) ?: null;
         $supplierAddress = trim((string)($data['supplier_address'] ?? '')) ?: null;
+        $allocationStatus = ($data['allocation_status'] ?? 'free') === 'allocated' ? 'allocated' : 'free';
+        $allocatedTo = $allocationStatus === 'allocated' ? (trim((string)($data['allocated_to'] ?? '')) ?: null) : null;
+        if ($allocationStatus === 'allocated' && $allocatedTo === null) {
+            throw new InvalidArgumentException('Specify who or where the item is allocated to.');
+        }
 
         $this->query(
-            'INSERT INTO inventory_items (company_id, item_code, name, category_id, unit, supplier_name, supplier_contact, supplier_phone, supplier_address, cost_price, selling_price, opening_stock, current_stock, reorder_level, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-            [$this->currentCompanyId(), $itemCode, $name, $categoryId, $unit, $supplierName, $supplierContact, $supplierPhone, $supplierAddress, number_format($costPrice, 2, '.', ''), number_format($sellingPrice, 2, '.', ''), $openingStock, $currentStock, $reorderLevel]
+            'INSERT INTO inventory_items (company_id, item_code, name, category_id, unit, supplier_name, supplier_contact, supplier_phone, supplier_address, cost_price, selling_price, opening_stock, current_stock, free_stock, allocated_stock, allocation_status, allocated_to, reorder_level, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+            [$this->currentCompanyId(), $itemCode, $name, $categoryId, $unit, $supplierName, $supplierContact, $supplierPhone, $supplierAddress, number_format($costPrice, 2, '.', ''), number_format($sellingPrice, 2, '.', ''), $openingStock, $currentStock, $currentStock, 0, $allocationStatus, $allocatedTo, $reorderLevel]
         );
 
         return (int)$this->db->lastInsertId();
@@ -140,6 +218,18 @@ class InventoryModel extends Model
                 $fields[] = $supplierField . ' = ?';
                 $params[] = trim((string)$data[$supplierField]) ?: null;
             }
+        }
+
+        if (array_key_exists('allocation_status', $data) || array_key_exists('allocated_to', $data)) {
+            $allocationStatus = ($data['allocation_status'] ?? $existing['allocation_status'] ?? 'free') === 'allocated' ? 'allocated' : 'free';
+            $allocatedTo = trim((string)($data['allocated_to'] ?? ''));
+            if ($allocationStatus === 'allocated' && $allocatedTo === '') {
+                throw new InvalidArgumentException('Specify who or where the item is allocated to.');
+            }
+            $fields[] = 'allocation_status = ?';
+            $params[] = $allocationStatus;
+            $fields[] = 'allocated_to = ?';
+            $params[] = $allocationStatus === 'allocated' ? $allocatedTo : null;
         }
 
         if (isset($data['cost_price'])) {

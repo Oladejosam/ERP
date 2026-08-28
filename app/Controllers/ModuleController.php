@@ -92,9 +92,21 @@ class ModuleController extends BaseController
     public function inventory(): void
     {
         $this->requireCompanyModule('inventory');
-        $items = $this->inventoryModel->getItems();
+        $search = trim((string)($_GET['search'] ?? ''));
+        $searchField = trim((string)($_GET['search_field'] ?? 'all'));
+        $availableSearchFields = [
+            'all' => 'All columns',
+            'item_code' => 'Item Code',
+            'name' => 'Name',
+            'category' => 'Category',
+            'supplier' => 'Supplier',
+        ];
+        if (!array_key_exists($searchField, $availableSearchFields)) {
+            $searchField = 'all';
+        }
+        $items = $this->inventoryModel->getItems($search, $searchField);
         $categories = $this->inventoryModel->getCategories();
-        $this->view('modules/inventory', ['title' => 'Inventory', 'items' => $items, 'categories' => $categories]);
+        $this->view('modules/inventory', ['title' => 'Inventory', 'items' => $items, 'categories' => $categories, 'search' => $search, 'searchField' => $searchField, 'availableSearchFields' => $availableSearchFields]);
     }
 
     public function contractAdmin(): void
@@ -433,7 +445,36 @@ class ModuleController extends BaseController
         }
 
         $changeHistory = $this->inventoryModel->getItemChangeHistory($itemId);
-        $this->view('modules/item_detail', ['title' => 'Inventory Item', 'item' => $item, 'changeHistory' => $changeHistory]);
+        $issueHistory = $this->inventoryModel->getItemIssueHistory($itemId);
+        $this->view('modules/item_detail', ['title' => 'Inventory Item', 'item' => $item, 'changeHistory' => $changeHistory, 'issueHistory' => $issueHistory, 'canIssueInventory' => $this->canHandleStoreInventory()]);
+    }
+
+    public function issueItem(): void
+    {
+        $this->requireCompanyModule('inventory');
+        if (!$this->canHandleStoreInventory()) {
+            $_SESSION['inventory_flash'] = 'Only personnel in the Store department can issue inventory items.';
+            $this->redirect('/inventory/detail?id=' . (int)($_POST['item_id'] ?? 0));
+        }
+        $itemId = (int)($_POST['item_id'] ?? 0);
+        try {
+            $this->inventoryModel->issueItem($itemId, (string)($_POST['issued_to'] ?? ''), (int)($_POST['quantity'] ?? 0), (string)($_POST['issued_date'] ?? ''), (string)($_POST['stock_source'] ?? ''), (int)($_SESSION['user']['id'] ?? 0) ?: null);
+            $_SESSION['inventory_flash'] = 'Inventory issue recorded successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['inventory_flash'] = 'Unable to record inventory issue: ' . $exception->getMessage();
+        }
+        $this->redirect('/inventory/detail?id=' . $itemId);
+    }
+
+    private function canHandleStoreInventory(): bool
+    {
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+            return true;
+        }
+        $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $employee = $employeeId > 0 ? $this->employeeModel->getEmployeeById($employeeId) : null;
+        return $employee !== null && strpos(strtolower(trim((string)($employee['department'] ?? ''))), 'store') !== false;
     }
 
     public function accounting(): void

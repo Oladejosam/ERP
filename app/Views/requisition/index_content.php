@@ -14,11 +14,11 @@
         <div class="col-12">
             <div class="card border-warning shadow-sm">
                 <div class="card-body">
-                    <h5 class="fw-bold mb-3">Material Dispatch Notifications</h5>
+                    <h5 class="fw-bold mb-3">Approved Store Requests</h5>
                     <?php foreach ($dispatchRequests as $dispatch): ?>
                         <div class="border-bottom py-3 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-                            <div><strong><?php echo htmlspecialchars($dispatch['description'] ?? 'Inventory item'); ?></strong><div class="small text-muted"><?php echo htmlspecialchars($dispatch['title']); ?> · Requested by <?php echo htmlspecialchars($dispatch['requester_name']); ?> · Quantity: <?php echo number_format((float)$dispatch['quantity'], 2); ?> <?php echo htmlspecialchars($dispatch['unit'] ?? ''); ?></div></div>
-                            <form method="post" action="/ERP/public/requisition/dispatch/approve"><input type="hidden" name="dispatch_id" value="<?php echo (int)$dispatch['id']; ?>"><button class="btn btn-success" type="submit" onclick="return confirm('Approve dispatch and deduct this quantity from inventory?');"><i class="bi bi-check-circle me-1"></i>Approve Dispatch</button></form>
+                            <div><strong><?php echo htmlspecialchars($dispatch['description'] ?? 'Inventory item'); ?></strong><div class="small text-muted"><?php echo htmlspecialchars($dispatch['title']); ?> · Requested by <?php echo htmlspecialchars($dispatch['requester_name']); ?> · Quantity: <?php echo number_format((float)$dispatch['quantity'], 2); ?> <?php echo htmlspecialchars($dispatch['unit'] ?? ''); ?></div><div class="small mt-1">Free stock: <?php echo number_format((float)($dispatch['free_stock'] ?? 0), 2); ?> · Allocated stock: <?php echo number_format((float)($dispatch['allocated_stock'] ?? 0), 2); ?><?php if (!empty($dispatch['requisition_urgent'])): ?> · <span class="text-danger fw-semibold">Urgent</span><?php endif; ?></div></div>
+                            <?php if (!empty($isStoreApprover)): ?><div class="d-flex flex-wrap gap-2"><form method="post" action="/ERP/public/requisition/dispatch/decide"><input type="hidden" name="dispatch_id" value="<?php echo (int)$dispatch['id']; ?>"><input type="hidden" name="stock_type" value="free"><button class="btn btn-success" type="submit" <?php echo (float)($dispatch['free_stock'] ?? 0) < (float)$dispatch['quantity'] ? 'disabled' : ''; ?> onclick="return confirm('Issue this request from free stock?');"><i class="bi bi-box-arrow-up me-1"></i>Issue Free Stock</button></form><form method="post" action="/ERP/public/requisition/dispatch/decide"><input type="hidden" name="dispatch_id" value="<?php echo (int)$dispatch['id']; ?>"><input type="hidden" name="stock_type" value="allocated"><label class="small d-flex align-items-center gap-1"><input type="checkbox" name="urgent" value="1"> Urgent</label><button class="btn btn-outline-warning" type="submit" <?php echo (float)($dispatch['allocated_stock'] ?? 0) < (float)$dispatch['quantity'] ? 'disabled' : ''; ?> onclick="return confirm('Issue this request from allocated stock?');"><i class="bi bi-box-arrow-up me-1"></i>Issue Allocated Stock</button></form></div><?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                 </div>
@@ -31,16 +31,16 @@
                 <h5 class="fw-bold mb-3">New requisition</h5>
                 <form method="post" action="/ERP/public/requisition/save">
                     <div class="mb-3">
-                        <label class="form-label" for="requisitionDate">Date</label>
+                        <label class="form-label" for="requisitionDate">* Date</label>
                         <input id="requisitionDate" type="date" class="form-control" name="date" value="<?php echo date('Y-m-d'); ?>" required>
                     </div>
                     <div class="mb-3">
                         <?php if (!empty($isSiteQuantitySurveyor)): ?>
-                            <label class="form-label" for="projectSite">Project Site</label>
+                            <label class="form-label" for="projectSite">* Project Site</label>
                             <select id="projectSite" class="form-select" name="project_id" required><option value="">Select project site</option><?php foreach (($projects ?? []) as $project): ?><option value="<?php echo (int)$project['id']; ?>"><?php echo htmlspecialchars($project['project_number'] . ' - ' . $project['name']); ?></option><?php endforeach; ?></select>
                             <div class="form-text">This requisition will be filed against the selected project.</div>
                         <?php else: ?>
-                            <label class="form-label" for="projectTitle">Project Title</label>
+                            <label class="form-label" for="projectTitle">* Project Title</label>
                             <input id="projectTitle" class="form-control" name="project_title" maxlength="150" required>
                         <?php endif; ?>
                     </div>
@@ -51,13 +51,14 @@
                     <div class="mb-3"><label class="form-label" for="supplier">Supplier</label><input id="supplier" class="form-control" name="supplier" maxlength="150"></div>
                     <div class="mb-3"><label class="form-label" for="supplierAddress">Supplier Address</label><textarea id="supplierAddress" class="form-control" name="supplier_address" rows="2"></textarea></div>
                     <div class="mb-3"><label class="form-label">Tag colleagues for approval</label><div class="border rounded p-2" style="max-height: 150px; overflow-y: auto;"><?php foreach (($companyUsers ?? []) as $companyUser): ?><label class="form-check"><input class="form-check-input" type="checkbox" name="participant_ids[]" value="<?php echo (int)$companyUser['id']; ?>"><span class="form-check-label"><?php echo htmlspecialchars($companyUser['name']); ?> <small class="text-muted">(<?php echo htmlspecialchars($companyUser['email']); ?>)</small></span></label><?php endforeach; ?></div><div class="form-text">Tagged colleagues will join the temporary requisition discussion.</div></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="urgent" id="requisitionUrgent" value="1"><label class="form-check-label" for="requisitionUrgent">Urgent requisition</label></div>
                     <div class="d-flex justify-content-between align-items-center mb-2"><h6 class="fw-bold mb-0">What is being requested</h6><button type="button" class="btn btn-sm btn-outline-primary" id="addRequisitionItem">Add item</button></div>
                     <div id="requisitionItems">
                         <div class="requisition-item border rounded p-3 mb-3">
                             <div class="d-flex justify-content-between mb-2"><span class="fw-semibold">Item 1</span><button type="button" class="btn btn-sm btn-outline-danger remove-requisition-item">Remove</button></div>
                             <div class="mb-2"><label class="form-label">Item Name</label><input class="form-control requisition-item-name" name="items[0][item_name]" list="inventoryItemSuggestions" autocomplete="off" placeholder="Start typing an inventory item"></div>
                             <div class="mb-2"><label class="form-label">Description of Item</label><textarea class="form-control requisition-item-description" name="items[0][description]" rows="2"></textarea><div class="form-text inventory-suggestion-status" aria-live="polite"></div></div>
-                            <div class="row g-2"><div class="col-6"><label class="form-label">Code</label><input class="form-control" name="items[0][code]"></div><div class="col-6"><label class="form-label">Unit</label><input class="form-control" name="items[0][unit]"></div><div class="col-6"><label class="form-label">Quantity Required</label><input type="number" class="form-control" name="items[0][quantity_required]" min="0" step="0.01"></div><div class="col-6"><label class="form-label">Quantity in Stock</label><input type="number" class="form-control" name="items[0][quantity_in_stock]" min="0" step="0.01"></div><div class="col-6"><label class="form-label">Quantity to Purchase</label><input type="number" class="form-control" name="items[0][quantity_to_purchase]" min="0" step="0.01" required></div><div class="col-6"><label class="form-label">Price</label><input type="number" class="form-control" name="items[0][price]" min="0" step="0.01" required></div></div>
+                            <div class="row g-2"><div class="col-6"><label class="form-label">Code</label><input class="form-control" name="items[0][code]"></div><div class="col-6"><label class="form-label">Unit</label><input class="form-control" name="items[0][unit]"></div><div class="col-6"><label class="form-label">Quantity Required</label><input type="number" class="form-control" name="items[0][quantity_required]" min="0" step="0.01"></div><div class="col-6"><label class="form-label">Quantity in Stock</label><input type="number" class="form-control" name="items[0][quantity_in_stock]" min="0" step="0.01"></div><div class="col-6"><label class="form-label">* Quantity to Purchase</label><input type="number" class="form-control" name="items[0][quantity_to_purchase]" min="0" step="0.01" required></div><div class="col-6"><label class="form-label">* Price</label><input type="number" class="form-control" name="items[0][price]" min="0" step="0.01" required></div></div>
                         </div>
                     </div>
                     <datalist id="inventoryItemSuggestions"></datalist>

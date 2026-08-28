@@ -215,7 +215,12 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Position</label>
-                            <input class="form-control" name="position" required>
+                            <select class="form-select" name="position" required>
+                                <option value="">Select position</option>
+                                <?php foreach (($roles ?? []) as $role): ?>
+                                    <option value="<?php echo htmlspecialchars($role['name']); ?>"><?php echo htmlspecialchars($role['name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Designation</label>

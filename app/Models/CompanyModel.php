@@ -182,6 +182,17 @@ class CompanyModel extends Model
         return (bool)$this->query('SELECT 1 FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key = ? LIMIT 1', [$companyId, $employeeId, $moduleKey])->fetchColumn();
     }
 
+    public function isStoreDepartmentEmployee(int $employeeId): bool
+    {
+        if ($employeeId <= 0) {
+            return false;
+        }
+        return (bool)$this->query(
+            'SELECT 1 FROM employees WHERE id = ? AND company_id = ? AND LOWER(department) LIKE ? LIMIT 1',
+            [$employeeId, $this->currentCompanyId(), '%store%']
+        )->fetchColumn();
+    }
+
     public function getEmployeeModuleAccess(int $employeeId): array
     {
         return array_values(array_map(static fn (array $row): string => (string)$row['module_key'], $this->query('SELECT module_key FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key <> "__configured__" ORDER BY module_key ASC', [$this->currentCompanyId(), $employeeId])->fetchAll()));

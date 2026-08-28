@@ -16,6 +16,13 @@ class PurchaseOrderModel extends Model
 
     private function ensurePurchaseOrderTables(): void
     {
+        $this->query('ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS company_id INT NULL AFTER id');
+        $this->query('ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS requested_by INT NULL AFTER company_id');
+        $this->query('ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS workflow_status ENUM("draft", "pending_head_approval", "approved", "denied", "flagged", "sent_to_logistics") NOT NULL DEFAULT "draft" AFTER status');
+        $this->query('ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS workflow_reason TEXT NULL AFTER workflow_status');
+        $this->query('ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS workflow_decided_by INT NULL AFTER workflow_reason');
+        $this->query('ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS workflow_decided_at DATETIME NULL AFTER workflow_decided_by');
+        $this->query('UPDATE purchase_orders SET company_id = 1 WHERE company_id IS NULL');
         $this->query(
             'CREATE TABLE IF NOT EXISTS purchase_order_items (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -72,6 +79,55 @@ class PurchaseOrderModel extends Model
         );
 
         return $stmt->fetchAll();
+    }
+
+    public function getWorkflowOrders(string $status): array
+    {
+        return $this->query(
+            'SELECT po.*, s.company_name AS supplier, u.name AS requester_name, d.name AS decider_name
+             FROM purchase_orders po LEFT JOIN suppliers s ON s.id = po.supplier_id
+             LEFT JOIN users u ON u.id = po.requested_by LEFT JOIN users d ON d.id = po.workflow_decided_by
+             WHERE po.company_id = ? AND po.workflow_status = ? ORDER BY po.created_at DESC, po.id DESC',
+            [$this->currentCompanyId(), $status]
+        )->fetchAll();
+    }
+
+    public function createWorkflowOrder(array $data, int $requestedBy): int
+    {
+        $supplierId = (int)($data['supplier_id'] ?? 0);
+        $projectId = !empty($data['project_id']) ? (int)$data['project_id'] : null;
+        $poNumber = trim((string)($data['po_number'] ?? '')) ?: 'PO-' . date('YmdHis');
+        $orderDate = trim((string)($data['order_date'] ?? date('Y-m-d')));
+        $productNames = (array)($data['product_name'] ?? []);
+        $quantities = (array)($data['quantity'] ?? []);
+        $priceRates = (array)($data['price_rate'] ?? []);
+        $totalAmount = 0.0;
+        foreach ($productNames as $index => $productName) {
+            if (trim((string)$productName) !== '' && (int)($quantities[$index] ?? 0) > 0) {
+                $totalAmount += (int)$quantities[$index] * max(0, (float)($priceRates[$index] ?? 0));
+            }
+        }
+        if ($supplierId <= 0 || $productNames === [] || $totalAmount <= 0) {
+            throw new InvalidArgumentException('Select a supplier and add at least one priced item.');
+        }
+        $this->query('INSERT INTO purchase_orders (company_id, requested_by, po_number, supplier_id, project_id, order_date, total_amount, status, workflow_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, "draft", "pending_head_approval", NOW())', [$this->currentCompanyId(), $requestedBy, $poNumber, $supplierId, $projectId, $orderDate, $totalAmount]);
+        $purchaseOrderId = (int)$this->db->lastInsertId();
+        $this->createPurchaseOrderItems($purchaseOrderId, $data);
+        return $purchaseOrderId;
+    }
+
+    public function decideWorkflowOrder(int $purchaseOrderId, int $decidedBy, string $decision, string $reason = ''): void
+    {
+        if (!in_array($decision, ['approved', 'denied', 'flagged'], true)) {
+            throw new InvalidArgumentException('Invalid purchase order decision.');
+        }
+        if ($decision === 'flagged' && trim($reason) === '') {
+            throw new InvalidArgumentException('Provide a reason when flagging a purchase order.');
+        }
+        $this->query('UPDATE purchase_orders SET workflow_status = ?, workflow_reason = ?, workflow_decided_by = ?, workflow_decided_at = NOW() WHERE id = ? AND company_id = ? AND workflow_status IN ("pending_head_approval", "flagged")', [$decision, trim($reason) ?: null, $decidedBy, $purchaseOrderId, $this->currentCompanyId()]);
+        if ($decision === 'approved') {
+            $this->query('UPDATE purchase_orders SET workflow_status = "sent_to_logistics" WHERE id = ? AND company_id = ?', [$purchaseOrderId, $this->currentCompanyId()]);
+        }
     }
 
     public function getPurchaseOrderById(int $id): ?array

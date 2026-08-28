@@ -141,6 +141,7 @@ class RoleModel extends Model
         }
         $this->db->beginTransaction();
         try {
+            $this->query('UPDATE employees SET position = "" WHERE company_id = ? AND LOWER(position) = LOWER(?)', [$this->currentCompanyId(), $role['name']]);
             $this->query('UPDATE users SET role_id = NULL WHERE role_id = ?', [$roleId]);
             $this->query('UPDATE departments SET role_id = NULL, head_role_id = NULL WHERE company_id = ? AND (role_id = ? OR head_role_id = ?)', [$this->currentCompanyId(), $roleId, $roleId]);
             $this->query('DELETE FROM department_roles WHERE company_id = ? AND role_id = ?', [$this->currentCompanyId(), $roleId]);

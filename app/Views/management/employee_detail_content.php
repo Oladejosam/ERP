@@ -81,7 +81,23 @@
                     ?>
                         <div class="col-md-6">
                             <label class="form-label" for="<?php echo htmlspecialchars($fieldName); ?>"><?php echo htmlspecialchars($fieldLabel); ?></label>
-                            <input id="<?php echo htmlspecialchars($fieldName); ?>" type="<?php echo $fieldType; ?>" class="form-control" name="<?php echo htmlspecialchars($fieldName); ?>" value="<?php echo htmlspecialchars((string)$fieldValue); ?>" <?php echo $fieldName === 'salary' ? 'step="0.01" min="0"' : ''; ?> <?php echo in_array($fieldName, ['employee_code', 'first_name', 'last_name', 'email', 'phone', 'department', 'position', 'hire_date'], true) ? 'required' : ''; ?>>
+                            <?php if ($fieldName === 'department'): ?>
+                                <select id="department" class="form-select" name="department" required>
+                                    <option value="">Select department</option>
+                                    <?php foreach (($departments ?? []) as $department): ?>
+                                        <option value="<?php echo htmlspecialchars($department['name']); ?>" <?php echo strtolower((string)$fieldValue) === strtolower((string)$department['name']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($department['name']); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            <?php elseif ($fieldName === 'position'): ?>
+                                <select id="position" class="form-select" name="position" required>
+                                    <option value="">Select position</option>
+                                    <?php foreach (($roles ?? []) as $role): ?>
+                                        <option value="<?php echo htmlspecialchars($role['name']); ?>" <?php echo strtolower((string)$fieldValue) === strtolower((string)$role['name']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($role['name']); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            <?php else: ?>
+                                <input id="<?php echo htmlspecialchars($fieldName); ?>" type="<?php echo $fieldType; ?>" class="form-control" name="<?php echo htmlspecialchars($fieldName); ?>" value="<?php echo htmlspecialchars((string)$fieldValue); ?>" <?php echo $fieldName === 'salary' ? 'step="0.01" min="0"' : ''; ?> <?php echo in_array($fieldName, ['employee_code', 'first_name', 'last_name', 'email', 'phone', 'hire_date'], true) ? 'required' : ''; ?>>
+                            <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                     <div class="col-md-6">

@@ -12,6 +12,7 @@ require_once APP_ROOT . '/app/Models/RequisitionModel.php';
 require_once APP_ROOT . '/app/Models/InventoryModel.php';
 require_once APP_ROOT . '/app/Models/ProjectModel.php';
 require_once APP_ROOT . '/app/Models/CompanyModel.php';
+require_once APP_ROOT . '/app/Models/PurchaseOrderModel.php';
 
 class ManagementController extends BaseController
 {
@@ -22,6 +23,7 @@ class ManagementController extends BaseController
     private InventoryModel $inventoryModel;
     private ProjectModel $projectModel;
     private CompanyModel $companyModel;
+    private PurchaseOrderModel $purchaseOrderModel;
 
     public function __construct()
     {
@@ -32,6 +34,7 @@ class ManagementController extends BaseController
         $this->inventoryModel = new InventoryModel();
         $this->projectModel = new ProjectModel();
         $this->companyModel = new CompanyModel();
+        $this->purchaseOrderModel = new PurchaseOrderModel();
     }
 
     public function staffPortal(): void
@@ -145,7 +148,6 @@ class ManagementController extends BaseController
             'departments' => $this->employeeModel->getDepartments(),
             'customFields' => $this->employeeModel->getCustomFields(),
             'employeeColumns' => $this->employeeModel->getEmployeeColumnOptions(),
-            'roles' => $this->roleModel->getRoles(),
             'roles' => $this->roleModel->getRoles(),
             'search' => $search,
         ]);
@@ -266,6 +268,7 @@ class ManagementController extends BaseController
             'title' => 'Employee Details',
             'employee' => $employee,
             'departments' => $this->employeeModel->getDepartments(),
+            'roles' => $this->roleModel->getRoles(),
             'customFields' => $this->employeeModel->getCustomFieldValues($employeeId),
             'employeeColumns' => $this->employeeModel->getEmployeeColumnOptions(),
         ]);
@@ -315,6 +318,11 @@ class ManagementController extends BaseController
             'tin' => trim((string)($_POST['tin'] ?? '')),
             'pfa' => trim((string)($_POST['pfa'] ?? '')),
         ];
+        $positionNames = array_map(static fn (array $role): string => strtolower(trim((string)$role['name'])), $this->roleModel->getRoles());
+        if (!in_array(strtolower($employeeData['position']), $positionNames, true)) {
+            $_SESSION['employee_flash'] = 'Select a position created in the HR module.';
+            $this->redirect('/management/employees');
+        }
 
         $profilePicture = $this->handleEmployeePhotoUpload($_FILES['profile_picture'] ?? null);
         if ($profilePicture !== null) {
@@ -451,6 +459,12 @@ class ManagementController extends BaseController
         $email = strtolower(trim((string)($_POST['email'] ?? '')));
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $_SESSION['employee_flash'] = 'A valid employee email is required.';
+            $this->redirect('/management/employees/view?id=' . $employeeId);
+        }
+        $departmentNames = array_map(static fn (array $department): string => strtolower(trim((string)$department['name'])), $this->employeeModel->getDepartments());
+        $positionNames = array_map(static fn (array $role): string => strtolower(trim((string)$role['name'])), $this->roleModel->getRoles());
+        if (!in_array(strtolower(trim((string)($_POST['department'] ?? ''))), $departmentNames, true) || !in_array(strtolower(trim((string)($_POST['position'] ?? ''))), $positionNames, true)) {
+            $_SESSION['employee_flash'] = 'Select a department and position created in this company.';
             $this->redirect('/management/employees/view?id=' . $employeeId);
         }
 
@@ -619,17 +633,80 @@ class ManagementController extends BaseController
     {
         $this->requireAccess();
 
-        $templatePath = APP_ROOT . '/downloads/employee_upload_template.xls';
-        if (!is_file($templatePath)) {
-            $_SESSION['employee_flash'] = 'Employee upload template is unavailable.';
+        try {
+            $templatePath = $this->createEmployeeTemplateXlsx($this->roleModel->getRoles());
+        } catch (Throwable $exception) {
+            $_SESSION['employee_flash'] = 'Employee upload template is unavailable: ' . $exception->getMessage();
             $this->redirect('/management/employees');
         }
 
-        header('Content-Type: application/vnd.ms-excel');
-        header('Content-Disposition: attachment; filename="employee_upload_template.xls"');
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="employee_upload_template.xlsx"');
         header('Content-Length: ' . (string)filesize($templatePath));
         readfile($templatePath);
+        unlink($templatePath);
         exit;
+    }
+
+    private function createEmployeeTemplateXlsx(array $roles): string
+    {
+        if (!class_exists('ZipArchive')) {
+            throw new RuntimeException('The PHP ZIP extension is unavailable.');
+        }
+        $roleNames = array_values(array_unique(array_filter(array_map(static fn (array $role): string => trim((string)($role['name'] ?? '')), $roles))));
+        if ($roleNames === []) {
+            throw new RuntimeException('Create at least one HR role before downloading the template.');
+        }
+
+        $escape = static fn (string $value): string => htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        $headers = ['Employee Code', 'First Name', 'Last Name', 'Email', 'Phone', 'Department', 'Position', 'Designation', 'Hire Date', 'Salary', 'Status', 'NIN', 'Account Number', 'Account Name', 'Bank Name', 'TIN', 'PFA', 'Role', 'Password'];
+        $rows = [
+            ['EMP001', 'Amina', 'Bello', 'amina.bello@example.com', '08031234567', 'Human Resources', $roleNames[0], $roleNames[0], '2026-01-15', '185000', 'active', '12345678901', '0123456789', 'Amina Bello', 'Access Bank', 'TIN001234567', 'Stanbic IBTC Pension', 'Staff', 'Welcome123!'],
+        ];
+        $cell = static function (string $value, int $column, int $row) use ($escape): string {
+            $letters = '';
+            while ($column > 0) {
+                $remainder = ($column - 1) % 26;
+                $letters = chr(65 + $remainder) . $letters;
+                $column = intdiv($column - 1, 26);
+            }
+            return '<c r="' . $letters . $row . '" t="inlineStr"><is><t>' . $escape($value) . '</t></is></c>';
+        };
+        $sheetRows = '<row r="1">';
+        foreach ($headers as $index => $header) {
+            $sheetRows .= $cell($header, $index + 1, 1);
+        }
+        $sheetRows .= '</row>';
+        foreach ($rows as $rowIndex => $row) {
+            $excelRow = $rowIndex + 2;
+            $sheetRows .= '<row r="' . $excelRow . '">';
+            foreach ($row as $index => $value) {
+                $sheetRows .= $cell((string)$value, $index + 1, $excelRow);
+            }
+            $sheetRows .= '</row>';
+        }
+        $roleRows = '';
+        foreach ($roleNames as $index => $roleName) {
+            $roleRows .= '<row r="' . ($index + 1) . '">' . $cell($roleName, 1, $index + 1) . '</row>';
+        }
+        $roleCount = count($roleNames);
+        $contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>';
+        $rootRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+        $workbookRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+        $workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Employees" sheetId="1" r:id="rId1"/><sheet name="Roles" sheetId="2" state="hidden" r:id="rId2"/></sheets></workbook>';
+        $sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:S' . (count($rows) + 1) . '"/><sheetData>' . $sheetRows . '</sheetData><dataValidations count="1"><dataValidation type="list" allowBlank="false" sqref="G2:G1000"><formula1>Roles!$A$1:$A$' . $roleCount . '</formula1></dataValidation></dataValidations></worksheet>';
+        $rolesSheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A' . $roleCount . '"/><sheetData>' . $roleRows . '</sheetData></worksheet>';
+        $styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="1"><xf/></cellXfs></styleSheet>';
+        $path = tempnam(sys_get_temp_dir(), 'employee_template_');
+        $archive = new ZipArchive();
+        if ($path === false || $archive->open($path, ZipArchive::OVERWRITE) !== true) {
+            throw new RuntimeException('Unable to create the Excel template.');
+        }
+        foreach (['[Content_Types].xml' => $contentTypes, '_rels/.rels' => $rootRels, 'xl/_rels/workbook.xml.rels' => $workbookRels, 'xl/workbook.xml' => $workbook, 'xl/worksheets/sheet1.xml' => $sheet, 'xl/worksheets/sheet2.xml' => $rolesSheet, 'xl/styles.xml' => $styles] as $name => $content) {
+            $archive->addFromString($name, $content);
+        }
+        $archive->close();
+        return $path;
     }
 
     public function uploadEmployees(): void
@@ -708,6 +785,7 @@ class ManagementController extends BaseController
         }
 
         $columnIndex = array_flip($header);
+        $positionNames = array_map(static fn (array $role): string => strtolower(trim((string)$role['name'])), $this->roleModel->getRoles());
         $imported = 0;
         $skipped = 0;
         $errors = [];
@@ -738,6 +816,9 @@ class ManagementController extends BaseController
             }
             if (!is_numeric($value('salary'))) {
                 $invalidFields[] = 'salary is not numeric';
+            }
+            if (!in_array(strtolower($value('position')), $positionNames, true)) {
+                $invalidFields[] = 'position must be an HR role';
             }
 
             if ($invalidFields !== []) {
@@ -971,7 +1052,62 @@ class ManagementController extends BaseController
     public function procurement(): void
     {
         $this->requireCompanyModule('procurement');
-        $this->view('modules/index', ['title' => 'Procurement']);
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        $isSuperAdmin = in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true);
+        $isStore = $this->isStoreDepartmentPersonnel();
+        $isHeadStore = $isStore && in_array($roleName, ['head store keeper', 'head store', 'hod store', 'hod of store', 'head of store'], true);
+        $isLogistics = $this->isDepartmentPersonnel('logistics');
+        $this->view('management/procurement', [
+            'title' => 'Procurement',
+            'suppliers' => $this->purchaseOrderModel->getSuppliers(),
+            'projects' => $this->purchaseOrderModel->getProjects(),
+            'pendingOrders' => $isHeadStore || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('pending_head_approval') : [],
+            'flaggedOrders' => $isHeadStore || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('flagged') : [],
+            'logisticsOrders' => $isLogistics || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('sent_to_logistics') : [],
+            'canInitiatePurchaseOrder' => $isStore || $isSuperAdmin,
+            'canApprovePurchaseOrder' => $isHeadStore || $isSuperAdmin,
+            'canReceivePurchaseOrder' => $isLogistics || $isSuperAdmin,
+        ]);
+    }
+
+    public function createStorePurchaseOrder(): void
+    {
+        $this->requireCompanyModule('procurement');
+        if (!$this->isStoreDepartmentPersonnel()) {
+            $_SESSION['procurement_flash'] = 'Only Store department personnel can initiate purchase orders.';
+            $this->redirect('/management/procurement');
+        }
+        try {
+            $this->purchaseOrderModel->createWorkflowOrder($_POST, (int)($_SESSION['user']['id'] ?? 0));
+            $_SESSION['procurement_flash'] = 'Purchase order sent to the Head Store Keeper for approval.';
+        } catch (Throwable $exception) {
+            $_SESSION['procurement_flash'] = 'Unable to initiate purchase order: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/procurement');
+    }
+
+    public function decideStorePurchaseOrder(): void
+    {
+        $this->requireCompanyModule('procurement');
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (!in_array($roleName, ['head store keeper', 'head store', 'hod store', 'hod of store', 'head of store', 'super admin', 'superadministrator', 'super administrator'], true)) {
+            $_SESSION['procurement_flash'] = 'Only the Head Store Keeper can decide on purchase orders.';
+            $this->redirect('/management/procurement');
+        }
+        try {
+            $this->purchaseOrderModel->decideWorkflowOrder((int)($_POST['purchase_order_id'] ?? 0), (int)($_SESSION['user']['id'] ?? 0), (string)($_POST['decision'] ?? ''), (string)($_POST['reason'] ?? ''));
+            $_SESSION['procurement_flash'] = 'Purchase order decision recorded.';
+        } catch (Throwable $exception) {
+            $_SESSION['procurement_flash'] = 'Unable to decide purchase order: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/procurement');
+    }
+
+    private function isDepartmentPersonnel(string $departmentName): bool
+    {
+        $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $employee = $employeeId > 0 ? $this->employeeModel->getEmployeeById($employeeId) : null;
+        return $employee !== null && strpos(strtolower(trim((string)($employee['department'] ?? ''))), strtolower($departmentName)) !== false;
     }
 
     public function requisition(): void
@@ -979,7 +1115,7 @@ class ManagementController extends BaseController
         $this->requireCompanyModule('requisition');
         $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
         $isSuperAdmin = in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true);
-        $isHeadStore = in_array($roleName, ['head store', 'head store keeper'], true);
+        $isStorePersonnel = $this->isStoreDepartmentPersonnel();
         $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
         $quantitySurveyorProjects = $this->projectModel->getQuantitySurveyorProjects($employeeId);
         $isSiteQuantitySurveyor = $quantitySurveyorProjects !== [];
@@ -989,7 +1125,8 @@ class ManagementController extends BaseController
             'companyUsers' => $this->requisitionModel->getCompanyUsers(),
             'projects' => $isSiteQuantitySurveyor ? $quantitySurveyorProjects : $this->projectModel->getProjects(),
             'isSiteQuantitySurveyor' => $isSiteQuantitySurveyor,
-            'dispatchRequests' => $isHeadStore || $isSuperAdmin ? $this->requisitionModel->getPendingDispatchRequests() : [],
+            'dispatchRequests' => $isStorePersonnel || $isSuperAdmin ? $this->requisitionModel->getPendingDispatchRequests() : [],
+            'isStoreApprover' => $isStorePersonnel || $isSuperAdmin,
         ]);
     }
 
@@ -997,8 +1134,8 @@ class ManagementController extends BaseController
     {
         $this->requireCompanyModule('requisition');
         $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
-        if (!in_array($roleName, ['head store', 'head store keeper', 'super admin', 'superadministrator', 'super administrator'], true)) {
-            $_SESSION['requisition_flash'] = 'Only the Head Store can approve material dispatches.';
+        if (!$this->isStoreDepartmentPersonnel()) {
+            $_SESSION['requisition_flash'] = 'Only personnel in the Store department can process material dispatches.';
             $this->redirect('/requisition');
         }
         try {
@@ -1008,6 +1145,39 @@ class ManagementController extends BaseController
             $_SESSION['requisition_flash'] = 'Unable to approve dispatch: ' . $exception->getMessage();
         }
         $this->redirect('/requisition');
+    }
+
+    public function decideDispatch(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (!$this->isStoreDepartmentPersonnel()) {
+            $_SESSION['requisition_flash'] = 'Only personnel in the Store department can process material dispatches.';
+            $this->redirect('/requisition');
+        }
+        try {
+            $this->requisitionModel->decideDispatch(
+                (int)($_POST['dispatch_id'] ?? 0),
+                (int)($_SESSION['user']['id'] ?? 0),
+                (string)($_POST['stock_type'] ?? ''),
+                !empty($_POST['urgent'])
+            );
+            $_SESSION['requisition_flash'] = 'Store decision recorded successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['requisition_flash'] = 'Unable to process store request: ' . $exception->getMessage();
+        }
+        $this->redirect('/requisition');
+    }
+
+    private function isStoreDepartmentPersonnel(): bool
+    {
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+            return true;
+        }
+        $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $employee = $employeeId > 0 ? $this->employeeModel->getEmployeeById($employeeId) : null;
+        return $employee !== null && strpos(strtolower(trim((string)($employee['department'] ?? ''))), 'store') !== false;
     }
 
     public function saveRequisition(): void

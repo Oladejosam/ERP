@@ -379,6 +379,9 @@ class EmployeeModel extends Model
             'INSERT INTO employee_disabled_columns (company_id, column_key) VALUES (?, ?) ON DUPLICATE KEY UPDATE column_key = VALUES(column_key)',
             [$this->currentCompanyId(), $columnKey]
         );
+        if ($columnKey === 'designation') {
+            $this->query('UPDATE employees SET designation = NULL WHERE company_id = ?', [$this->currentCompanyId()]);
+        }
     }
 
     public function generateUniqueEmployeeCode(string $prefix = 'EMP'): string

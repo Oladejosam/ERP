@@ -16,6 +16,23 @@
             <?php unset($_SESSION['inventory_flash']); ?>
         <?php endif; ?>
 
+        <form class="row g-2 align-items-end mb-3" method="get" action="/ERP/public/modules/inventory">
+            <div class="col-md-3 col-lg-3">
+            <label class="form-label" for="inventorySearchField">Filter by</label>
+                <select id="inventorySearchField" class="form-select" name="search_field">
+                    <?php foreach (($availableSearchFields ?? []) as $fieldValue => $fieldLabel): ?>
+                        <option value="<?php echo htmlspecialchars($fieldValue); ?>" <?php echo ($searchField ?? 'all') === $fieldValue ? 'selected' : ''; ?>><?php echo htmlspecialchars($fieldLabel); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-5 col-lg-4">
+                <label class="form-label" for="inventorySearch">Search inventory</label>
+                <input id="inventorySearch" class="form-control" type="search" name="search" value="<?php echo htmlspecialchars($search ?? ''); ?>" placeholder="Search by item code, name, category, or supplier">
+            </div>
+            <div class="col-auto"><button class="btn btn-outline-primary" type="submit"><i class="bi bi-search me-1"></i>Search</button></div>
+            <?php if (!empty($search)): ?><div class="col-auto"><a class="btn btn-outline-secondary" href="/ERP/public/modules/inventory">Clear</a></div><?php endif; ?>
+        </form>
+
         <table class="table table-striped align-middle">
             <thead>
                 <tr>
@@ -23,13 +40,15 @@
                     <th>Name</th>
                     <th>Category</th>
                     <th>Stock</th>
+                    <th>Free</th>
+                    <th>Allocated</th>
                     <th>Reorder</th>
                     <th>Action</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($items)): ?>
-                    <tr><td colspan="6" class="text-center text-muted py-4">No inventory items yet.</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted py-4"><?php echo !empty($search) ? 'No inventory items match your search.' : 'No inventory items yet.'; ?></td></tr>
                 <?php else: ?>
                     <?php foreach ($items as $item): ?>
                         <tr>
@@ -37,8 +56,10 @@
                             <td><?php echo htmlspecialchars($item['name'] ?? ''); ?></td>
                             <td><?php echo htmlspecialchars($item['category_name'] ?? ''); ?></td>
                             <td><?php echo (int)($item['current_stock'] ?? 0); ?></td>
+                            <td><?php echo (int)($item['free_stock'] ?? $item['current_stock'] ?? 0); ?></td>
+                            <td><?php echo (int)($item['allocated_stock'] ?? 0); ?></td>
                             <td><?php echo (int)($item['reorder_level'] ?? 0); ?></td>
-                            <td><a class="btn btn-sm btn-outline-primary" href="/ERP/public/inventory/detail?id=<?php echo (int)$item['id']; ?>">Edit</a></td>
+                            <td><a class="btn btn-sm btn-outline-primary" href="/ERP/public/inventory/detail?id=<?php echo (int)$item['id']; ?>">View</a></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
