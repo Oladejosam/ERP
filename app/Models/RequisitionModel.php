@@ -84,6 +84,23 @@ class RequisitionModel extends Model
             )'
         );
         $this->query(
+            'CREATE TABLE IF NOT EXISTS requisition_item_adjustments (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                requisition_id INT NOT NULL,
+                requisition_item_id INT NOT NULL,
+                company_id INT NOT NULL,
+                user_id INT NOT NULL,
+                field_name VARCHAR(40) NOT NULL DEFAULT "quantity",
+                previous_value DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                new_value DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                delta DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                adjustment_reason VARCHAR(255) NULL,
+                changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_requisition_item_adjustments_item (requisition_item_id),
+                INDEX idx_requisition_item_adjustments_requisition (requisition_id)
+            )'
+        );
+        $this->query(
             'CREATE TABLE IF NOT EXISTS requisition_dispatch_requests (
                 id INT PRIMARY KEY AUTO_INCREMENT,
                 requisition_id INT NOT NULL,
@@ -96,6 +113,33 @@ class RequisitionModel extends Model
                 decided_at DATETIME NULL,
                 decided_by INT NULL,
                 UNIQUE KEY unique_dispatch_item (requisition_item_id)
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS requisition_form_fields (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                field_key VARCHAR(80) NOT NULL,
+                label VARCHAR(120) NOT NULL,
+                field_type VARCHAR(30) NOT NULL DEFAULT "text",
+                required TINYINT(1) NOT NULL DEFAULT 0,
+                placeholder VARCHAR(255) NULL,
+                help_text VARCHAR(255) NULL,
+                sort_order INT NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_company_field (company_id, field_key)
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS requisition_form_data (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                requisition_id INT NOT NULL,
+                company_id INT NOT NULL,
+                field_key VARCHAR(80) NOT NULL,
+                field_label VARCHAR(120) NOT NULL,
+                field_value LONGTEXT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_requisition_field (requisition_id, field_key)
             )'
         );
         $this->query('ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS chat_closed_at DATETIME NULL');
@@ -125,6 +169,117 @@ class RequisitionModel extends Model
             $requisition['items'] = $items;
         }
         return $requisitions;
+    }
+
+    public static function defaultFormFields(): array
+    {
+        return [
+            ['key' => 'project_title', 'label' => 'Project Title', 'type' => 'text', 'required' => true, 'placeholder' => 'Enter a project title', 'help_text' => 'The title of the project or work request.', 'sort_order' => 1],
+            ['key' => 'trade', 'label' => 'Trade', 'type' => 'text', 'required' => false, 'placeholder' => 'e.g. Masonry', 'help_text' => 'Trade or specialty involved in the request.', 'sort_order' => 2],
+            ['key' => 'supplier', 'label' => 'Supplier', 'type' => 'text', 'required' => false, 'placeholder' => 'Supplier name', 'help_text' => 'Preferred vendor or supplier.', 'sort_order' => 3],
+            ['key' => 'supplier_address', 'label' => 'Supplier Address', 'type' => 'textarea', 'required' => false, 'placeholder' => 'Supplier office address', 'help_text' => 'Where the supplier is located.', 'sort_order' => 4],
+            ['key' => 'expected_delivery', 'label' => 'Expected Delivery', 'type' => 'date', 'required' => false, 'placeholder' => 'Select delivery date', 'help_text' => 'When the item is expected to be delivered.', 'sort_order' => 5],
+        ];
+    }
+
+    public function getDefaultFormFields(): array
+    {
+        return self::defaultFormFields();
+    }
+
+    public function getFormFields(): array
+    {
+        $rows = $this->query('SELECT field_key, label, field_type, required, placeholder, help_text, sort_order FROM requisition_form_fields WHERE company_id = ? ORDER BY sort_order ASC, id ASC', [$this->currentCompanyId()])->fetchAll();
+        if ($rows === []) {
+            return $this->getDefaultFormFields();
+        }
+        return array_map(static function (array $row): array {
+            return [
+                'key' => (string)$row['field_key'],
+                'label' => (string)$row['label'],
+                'type' => (string)($row['field_type'] ?? 'text'),
+                'required' => (bool)$row['required'],
+                'placeholder' => (string)($row['placeholder'] ?? ''),
+                'help_text' => (string)($row['help_text'] ?? ''),
+                'sort_order' => (int)($row['sort_order'] ?? 0),
+            ];
+        }, $rows);
+    }
+
+    public function saveFormFields(array $fields): void
+    {
+        $companyId = $this->currentCompanyId();
+        $normalized = [];
+        foreach ($fields as $index => $field) {
+            $key = strtolower(trim((string)($field['key'] ?? '')));
+            $label = trim((string)($field['label'] ?? ''));
+            if ($key === '' || $label === '') {
+                continue;
+            }
+            $type = in_array(strtolower((string)($field['type'] ?? 'text')), ['text', 'textarea', 'number', 'date', 'select', 'checkbox'], true)
+                ? strtolower((string)($field['type'] ?? 'text'))
+                : 'text';
+            $normalized[] = [
+                'key' => $key,
+                'label' => $label,
+                'type' => $type,
+                'required' => !empty($field['required']) ? 1 : 0,
+                'placeholder' => trim((string)($field['placeholder'] ?? '')),
+                'help_text' => trim((string)($field['help_text'] ?? '')),
+                'sort_order' => (int)$index,
+            ];
+        }
+        $this->query('DELETE FROM requisition_form_fields WHERE company_id = ?', [$companyId]);
+        foreach ($normalized as $field) {
+            $this->query(
+                'INSERT INTO requisition_form_fields (company_id, field_key, label, field_type, required, placeholder, help_text, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [$companyId, $field['key'], $field['label'], $field['type'], $field['required'], $field['placeholder'] !== '' ? $field['placeholder'] : null, $field['help_text'] !== '' ? $field['help_text'] : null, $field['sort_order']]
+            );
+        }
+        if ($normalized === []) {
+            foreach ($this->getDefaultFormFields() as $index => $field) {
+                $this->query(
+                    'INSERT INTO requisition_form_fields (company_id, field_key, label, field_type, required, placeholder, help_text, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [$companyId, $field['key'], $field['label'], $field['type'], !empty($field['required']) ? 1 : 0, $field['placeholder'] !== '' ? $field['placeholder'] : null, $field['help_text'] !== '' ? $field['help_text'] : null, $index]
+                );
+            }
+        }
+    }
+
+    public function saveFormData(int $requisitionId, array $data, array $fields): void
+    {
+        $companyId = $this->currentCompanyId();
+        foreach ($fields as $field) {
+            $key = strtolower(trim((string)($field['key'] ?? '')));
+            if ($key === '') {
+                continue;
+            }
+            $value = $data[$key] ?? null;
+            if (is_array($value)) {
+                $value = implode(', ', array_filter(array_map('strval', $value), static fn (string $item): bool => trim($item) !== ''));
+            }
+            $value = is_null($value) ? null : trim((string)$value);
+            if ($value === '' || $value === null) {
+                continue;
+            }
+            $this->query(
+                'INSERT INTO requisition_form_data (requisition_id, company_id, field_key, field_label, field_value) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE field_label = VALUES(field_label), field_value = VALUES(field_value)',
+                [$requisitionId, $companyId, $key, trim((string)($field['label'] ?? $key)), $value]
+            );
+        }
+    }
+
+    public function getFormData(int $requisitionId): array
+    {
+        $rows = $this->query('SELECT field_key, field_label, field_value FROM requisition_form_data WHERE requisition_id = ? AND company_id = ? ORDER BY id ASC', [$requisitionId, $this->currentCompanyId()])->fetchAll();
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(string)$row['field_key']] = [
+                'label' => (string)$row['field_label'],
+                'value' => (string)$row['field_value'],
+            ];
+        }
+        return $out;
     }
 
     public function create(array $data, ?int $requestedBy): int
@@ -186,6 +341,7 @@ class RequisitionModel extends Model
                 }
             }
             $this->query('UPDATE requisitions SET amount = ?, value = ? WHERE id = ?', [number_format($total, 2, '.', ''), number_format($total, 2, '.', ''), $requisitionId]);
+            $this->saveFormData($requisitionId, $data, $this->getFormFields());
             $this->db->commit();
         } catch (Throwable $exception) {
             if ($this->db->inTransaction()) {
@@ -283,10 +439,49 @@ class RequisitionModel extends Model
         if (!$requisition) {
             return null;
         }
-        $requisition['items'] = $this->query('SELECT * FROM requisition_items WHERE requisition_id = ? ORDER BY id ASC', [$requisitionId])->fetchAll();
+        $items = $this->query('SELECT * FROM requisition_items WHERE requisition_id = ? ORDER BY id ASC', [$requisitionId])->fetchAll();
+        foreach ($items as $index => $item) {
+            $items[$index]['adjustments'] = $this->query(
+                'SELECT a.*, u.name AS user_name FROM requisition_item_adjustments a INNER JOIN users u ON u.id = a.user_id WHERE a.requisition_id = ? AND a.requisition_item_id = ? AND a.company_id = ? ORDER BY a.changed_at DESC, a.id DESC',
+                [$requisitionId, (int)$item['id'], $this->currentCompanyId()]
+            )->fetchAll();
+        }
+        $requisition['items'] = $items;
+        $requisition['form_data'] = $this->getFormData($requisitionId);
         $requisition['participants'] = $this->query('SELECT u.id, u.name, u.email FROM requisition_participants p INNER JOIN users u ON u.id = p.user_id WHERE p.requisition_id = ? AND p.company_id = ? ORDER BY u.name ASC', [$requisitionId, $this->currentCompanyId()])->fetchAll();
         $requisition['messages'] = $this->query('SELECT m.*, u.name AS author_name FROM requisition_messages m INNER JOIN users u ON u.id = m.user_id WHERE m.requisition_id = ? AND m.company_id = ? ORDER BY m.created_at ASC, m.id ASC', [$requisitionId, $this->currentCompanyId()])->fetchAll();
         return $requisition;
+    }
+
+    public function adjustItemQuantity(int $requisitionId, int $itemId, int $userId, float $delta, string $reason = ''): void
+    {
+        $companyId = $this->currentCompanyId();
+        $item = $this->query('SELECT * FROM requisition_items WHERE id = ? AND requisition_id = ? AND requisition_id IN (SELECT id FROM requisitions WHERE company_id = ?) LIMIT 1', [$itemId, $requisitionId, $companyId])->fetch();
+        if (!$item) {
+            throw new InvalidArgumentException('The requisition item could not be found.');
+        }
+
+        $previousRequired = (float)($item['quantity_required'] ?? 0);
+        $previousToPurchase = (float)($item['quantity_to_purchase'] ?? 0);
+        $newRequired = max(0, $previousRequired + $delta);
+        $newToPurchase = max(0, $previousToPurchase + $delta);
+        $price = max(0, (float)($item['price'] ?? 0));
+        $newValue = $newToPurchase * $price;
+
+        $this->query(
+            'UPDATE requisition_items SET quantity_required = ?, quantity_to_purchase = ?, value = ? WHERE id = ? AND requisition_id = ?',
+            [number_format($newRequired, 2, '.', ''), number_format($newToPurchase, 2, '.', ''), number_format($newValue, 2, '.', ''), $itemId, $requisitionId]
+        );
+
+        $this->query(
+            'INSERT INTO requisition_item_adjustments (requisition_id, requisition_item_id, company_id, user_id, field_name, previous_value, new_value, delta, adjustment_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$requisitionId, $itemId, $companyId, $userId, 'quantity', number_format($previousRequired, 2, '.', ''), number_format($newRequired, 2, '.', ''), number_format($delta, 2, '.', ''), trim($reason) !== '' ? trim($reason) : null]
+        );
+
+        $this->query(
+            'UPDATE requisitions SET amount = (SELECT ROUND(SUM(value), 2) FROM requisition_items WHERE requisition_id = ?) WHERE id = ?',
+            [$requisitionId, $requisitionId]
+        );
     }
 
     public function getCompanyUsers(): array
@@ -355,6 +550,65 @@ class RequisitionModel extends Model
         )->fetchAll();
     }
 
+    private function getRoleApprovalDepth(int $roleId): int
+    {
+        $companyId = $this->currentCompanyId();
+        $depth = 0;
+        $currentRoleId = $roleId;
+        $visited = [];
+
+        while ($currentRoleId > 0 && !isset($visited[$currentRoleId])) {
+            $visited[$currentRoleId] = true;
+            $parentRow = $this->query('SELECT parent_role_id FROM workflow_role_links WHERE company_id = ? AND role_id = ? LIMIT 1', [$companyId, $currentRoleId])->fetch();
+            if (!$parentRow || $parentRow['parent_role_id'] === null) {
+                break;
+            }
+            $depth++;
+            $currentRoleId = (int)$parentRow['parent_role_id'];
+        }
+
+        return $depth;
+    }
+
+    private function getHighestLevelTaggedApprover(int $requisitionId): ?int
+    {
+        $companyId = $this->currentCompanyId();
+        $rows = $this->query('SELECT p.user_id, u.role_id FROM requisition_participants p INNER JOIN users u ON u.id = p.user_id WHERE p.requisition_id = ? AND p.company_id = ? ORDER BY p.user_id ASC', [$requisitionId, $companyId])->fetchAll();
+        $highestUserId = null;
+        $highestDepth = -1;
+
+        foreach ($rows as $row) {
+            $userId = (int)$row['user_id'];
+            $roleId = (int)($row['role_id'] ?? 0);
+            $depth = $roleId > 0 ? $this->getRoleApprovalDepth($roleId) : 0;
+            if ($depth > $highestDepth) {
+                $highestDepth = $depth;
+                $highestUserId = $userId;
+            }
+        }
+
+        return $highestUserId;
+    }
+
+    private function sendToLogisticsOfficer(int $requisitionId, int $approvedBy): void
+    {
+        $companyId = $this->currentCompanyId();
+        $logisticsUserIds = $this->query(
+            'SELECT u.id FROM users u INNER JOIN roles r ON r.id = u.role_id WHERE u.company_id = ? AND LOWER(r.name) LIKE ? ORDER BY u.name ASC',
+            [$companyId, '%logistics%']
+        )->fetchAll();
+
+        foreach ($logisticsUserIds as $row) {
+            $logisticsUserId = (int)$row['id'];
+            $this->query('INSERT IGNORE INTO requisition_participants (requisition_id, company_id, user_id) VALUES (?, ?, ?)', [$requisitionId, $companyId, $logisticsUserId]);
+        }
+
+        $this->query(
+            'INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)',
+            [$requisitionId, $companyId, $approvedBy, 'Requisition approved by the top-level approver and sent to the Logistics Officer.']
+        );
+    }
+
     public function decide(int $requisitionId, int $userId, string $decision): void
     {
         if (!in_array($decision, ['approved', 'rejected'], true)) {
@@ -368,8 +622,22 @@ class RequisitionModel extends Model
         if (!$this->isParticipant($requisitionId, $userId)) {
             throw new InvalidArgumentException('Only tagged colleagues can decide on this requisition.');
         }
-        $this->query('UPDATE requisitions SET status = ?, chat_closed_at = NOW() WHERE id = ? AND company_id = ? AND status = "pending"', [$decision, $requisitionId, $companyId]);
-        $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, 'Requisition ' . $decision . '. The discussion is now closed.']);
+
+        if ($decision === 'rejected') {
+            $this->query('UPDATE requisitions SET status = ?, chat_closed_at = NOW() WHERE id = ? AND company_id = ? AND status = "pending"', [$decision, $requisitionId, $companyId]);
+            $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, 'Requisition rejected. The discussion is now closed.']);
+            return;
+        }
+
+        $highestApproverId = $this->getHighestLevelTaggedApprover($requisitionId);
+        if ($highestApproverId === null || (int)$userId !== $highestApproverId) {
+            $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, 'Approved by this participant, but the requisition remains open pending the highest-level approver.']);
+            return;
+        }
+
+        $this->query('UPDATE requisitions SET status = "approved", chat_closed_at = NOW() WHERE id = ? AND company_id = ? AND status = "pending"', [$requisitionId, $companyId]);
+        $this->sendToLogisticsOfficer($requisitionId, $userId);
+        $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, 'Requisition approved and the discussion is now closed.']);
     }
 
     public function handoff(int $requisitionId, int $userId, int $nextUserId, string $note = ''): void

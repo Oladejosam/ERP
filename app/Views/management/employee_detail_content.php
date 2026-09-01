@@ -15,6 +15,24 @@
             <div class="card border-0 bg-light h-100">
                 <div class="card-body text-center">
                             <?php $photoPath = trim((string)($employee['profile_picture'] ?? '')); $photoUrl = $photoPath !== '' ? BASE_URL . '/uploads/' . ltrim($photoPath, '/') : ''; ?>
+                            <?php if (isset($visibleColumnKeys['profile_picture'])): ?>
+                            <div class="d-flex justify-content-center mb-3">
+                                <div class="position-relative d-inline-block">
+                                    <?php if ($photoUrl !== ''): ?>
+                                        <img src="<?php echo htmlspecialchars($photoUrl); ?>" alt="Employee profile picture" class="rounded-circle border shadow-sm" style="width: 96px; height: 96px; object-fit: cover;">
+                                    <?php else: ?>
+                                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style="width: 96px; height: 96px; font-size: 2rem;">
+                                            <?php echo htmlspecialchars(strtoupper(substr(($employee['first_name'] ?? 'E'), 0, 1) . substr(($employee['last_name'] ?? 'M'), 0, 1))); ?>
+                                        </div>
+                                    <?php endif; ?>
+                                    <form action="/ERP/public/management/employees/update-photo" method="post" enctype="multipart/form-data" class="position-absolute top-0 end-0" style="transform: translate(30%, 20%); margin: 0;">
+                                        <input type="hidden" name="employee_id" value="<?php echo (int)$employee['id']; ?>">
+                                        <input id="profilePicture" type="file" class="d-none" name="profile_picture" accept="image/jpeg,image/png,image/webp" required onchange="this.form.submit()">
+                                        <label for="profilePicture" class="btn btn-primary rounded-circle d-flex align-items-center justify-content-center shadow-sm border border-white" title="Add profile picture" style="width: 32px; height: 32px; padding: 0; font-size: 1.35rem; line-height: 1; font-weight: 700;">+</label>
+                                    </form>
+                                </div>
+                            </div>
+                            <?php else: ?>
                             <?php if ($photoUrl !== ''): ?>
                                 <img src="<?php echo htmlspecialchars($photoUrl); ?>" alt="Employee profile picture" class="rounded-circle border shadow-sm mx-auto d-block mb-3" style="width: 96px; height: 96px; object-fit: cover;">
                             <?php else: ?>
@@ -22,13 +40,6 @@
                                     <?php echo htmlspecialchars(strtoupper(substr(($employee['first_name'] ?? 'E'), 0, 1) . substr(($employee['last_name'] ?? 'M'), 0, 1))); ?>
                                 </div>
                             <?php endif; ?>
-                            <?php if (isset($visibleColumnKeys['profile_picture'])): ?>
-                            <form action="/ERP/public/management/employees/update-photo" method="post" enctype="multipart/form-data" class="text-start mb-3">
-                                <input type="hidden" name="employee_id" value="<?php echo (int)$employee['id']; ?>">
-                                <label for="profilePicture" class="form-label small fw-semibold">Change profile picture</label>
-                                <input id="profilePicture" type="file" class="form-control form-control-sm" name="profile_picture" accept="image/jpeg,image/png,image/webp" required>
-                                <button type="submit" class="btn btn-sm btn-primary w-100 mt-2">Upload Picture</button>
-                            </form>
                             <?php endif; ?>
                             <?php if (!empty($_SESSION['employee_flash'])): ?>
                                 <div class="alert alert-success py-2"><?php echo htmlspecialchars($_SESSION['employee_flash']); ?></div>

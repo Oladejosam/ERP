@@ -68,6 +68,9 @@
                             <div class="col-md-6">
                                 <a class="btn btn-outline-dark w-100 py-3" href="/ERP/public/modules/workflow"><i class="bi bi-signpost-2 me-2"></i>Approval routes</a>
                             </div>
+                            <div class="col-md-6">
+                                <a class="btn btn-outline-dark w-100 py-3" href="/ERP/public/modules/requisition-form"><i class="bi bi-ui-checks-grid me-2"></i>Requisition form</a>
+                            </div>
                         </div>
                     </div>
                 </div>

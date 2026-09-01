@@ -41,16 +41,41 @@ class BaseController extends Controller
     protected function requireCompanyModule(string $moduleKey): void
     {
         $this->requireAccess();
-        if (!(new CompanyModel())->hasModuleAccess($moduleKey)) {
+        $companyModel = new CompanyModel();
+        $moduleAliases = [$moduleKey];
+        if ($moduleKey === 'payroll') {
+            $moduleAliases[] = 'accounting';
+        }
+        if ($moduleKey === 'salary_structure') {
+            $moduleAliases[] = 'payroll';
+            $moduleAliases[] = 'accounting';
+        }
+
+        $hasCompanyAccess = false;
+        foreach (array_unique($moduleAliases) as $alias) {
+            if ($companyModel->hasModuleAccess($alias)) {
+                $hasCompanyAccess = true;
+                break;
+            }
+        }
+
+        if (!$hasCompanyAccess) {
             $_SESSION['company_flash'] = 'This module is not enabled for the selected company.';
             $this->redirect('/');
         }
+
         $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
         if (!in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
             $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
-            $companyModel = new CompanyModel();
             $storeAccess = in_array($moduleKey, ['inventory', 'requisition', 'procurement'], true) && $companyModel->isStoreDepartmentEmployee($employeeId);
-            if ($employeeId > 0 && !$storeAccess && !$companyModel->hasEmployeeModuleAccess($employeeId, $moduleKey)) {
+            $hasEmployeeAccess = false;
+            foreach (array_unique($moduleAliases) as $alias) {
+                if ($employeeId > 0 && $companyModel->hasEmployeeModuleAccess($employeeId, $alias)) {
+                    $hasEmployeeAccess = true;
+                    break;
+                }
+            }
+            if ($employeeId > 0 && !$storeAccess && !$hasEmployeeAccess) {
                 $_SESSION['company_flash'] = 'This module is not enabled for your staff account.';
                 $this->redirect('/');
             }

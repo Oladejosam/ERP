@@ -113,14 +113,19 @@ function isActiveNav(string $href, string $currentPath): bool {
                         <?php if ($companyModel->hasModuleAccess('inventory')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/inventory', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/inventory"><i class="bi bi-box-seam me-2"></i>Inventory</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('accounting')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/accounting', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/accounting"><i class="bi bi-cash-stack me-2"></i>Accounting</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('employees')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/employees', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/employees"><i class="bi bi-people me-2"></i>Employees</a></li><?php endif; ?>
-                        <?php if ($companyModel->hasModuleAccess('employees')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/module-access', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/module-access"><i class="bi bi-person-lock me-2"></i>Staff Module Access</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasModuleAccess('employees')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/module-access', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/module-access"><i class="bi bi-person-lock me-2"></i>Role Module Access</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('hr')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/hr', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/hr"><i class="bi bi-person-badge me-2"></i>HR</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('procurement')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/procurement', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/procurement"><i class="bi bi-cart3 me-2"></i>Procurement</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('requisition')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/requisition', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/requisition"><i class="bi bi-file-earmark-text me-2"></i>Requisition</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('projects')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/projects', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/projects"><i class="bi bi-kanban me-2"></i>Project</a></li><?php endif; ?>
                         <?php if ($companyModel->hasModuleAccess('contract_admin')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/contract-admin', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/contract-admin"><i class="bi bi-file-earmark-check me-2"></i>Contract Admin</a></li><?php endif; ?>
+                        <?php foreach ($companyModel->getCustomModulesForCompany((int)($_SESSION['selected_company_id'] ?? 1)) as $customModule): ?>
+                            <?php $customKey = (string)$customModule['module_key']; if (!$companyModel->hasModuleAccess($customKey)) { continue; } ?>
+                            <li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/custom', $currentPath) && (string)($_GET['module'] ?? '') === $customKey ? ' active' : ''; ?>" href="/ERP/public/modules/custom?module=<?php echo urlencode($customKey); ?>"><i class="bi bi-puzzle me-2"></i><?php echo htmlspecialchars((string)$customModule['module_name']); ?></a></li>
+                        <?php endforeach; ?>
                         <?php if ($isSuperAdmin): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/company/workspace', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/company/workspace"><i class="bi bi-buildings me-2"></i>Company Workspace</a></li><?php endif; ?>
                         <?php if ($isSuperAdmin): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/workflow', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/workflow"><i class="bi bi-diagram-3 me-2"></i>Workflow</a></li><?php endif; ?>
+                        <?php if ($isSuperAdmin): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/requisition-form', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/requisition-form"><i class="bi bi-ui-checks-grid me-2"></i>Requisition Form</a></li><?php endif; ?>
                         <li><a class="nav-link<?php echo isActiveNav('/ERP/public/setup', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/setup"><i class="bi bi-building-gear me-2"></i>Company Setup</a></li>
                         <li><a class="nav-link" href="/ERP/public/logout"><i class="bi bi-box-arrow-right me-2"></i>Logout</a></li>
                     </ul>
@@ -129,6 +134,9 @@ function isActiveNav(string $href, string $currentPath): bool {
         </aside>
 
         <main class="col-lg-10 p-4">
+            <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="window.history.back();">
+                <i class="bi bi-arrow-left"></i> Back
+            </button>
             <?php if (isset($contentView) && file_exists($contentView)) { require $contentView; } ?>
         </main>
     </div>

@@ -11,6 +11,7 @@ require_once APP_ROOT . '/app/Models/ProjectModel.php';
 require_once APP_ROOT . '/app/Models/EmployeeModel.php';
 require_once APP_ROOT . '/app/Models/WorkflowModel.php';
 require_once APP_ROOT . '/app/Models/ContractAdminModel.php';
+require_once APP_ROOT . '/app/Models/RequisitionModel.php';
 
 class ModuleController extends BaseController
 {
@@ -20,6 +21,7 @@ class ModuleController extends BaseController
     private EmployeeModel $employeeModel;
     private WorkflowModel $workflowModel;
     private ContractAdminModel $contractAdminModel;
+    private RequisitionModel $requisitionModel;
 
     public function __construct()
     {
@@ -29,12 +31,82 @@ class ModuleController extends BaseController
         $this->employeeModel = new EmployeeModel();
         $this->workflowModel = new WorkflowModel();
         $this->contractAdminModel = new ContractAdminModel();
+        $this->requisitionModel = new RequisitionModel();
+    }
+
+    public function requisitionForm(): void
+    {
+        $this->requireSuperAdmin();
+        $this->view('modules/requisition_form', [
+            'title' => 'Requisition Form Designer',
+            'fields' => $this->requisitionModel->getFormFields(),
+        ]);
+    }
+
+    public function saveRequisitionForm(): void
+    {
+        $this->requireSuperAdmin();
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/modules/requisition-form');
+        }
+
+        try {
+            $rawFields = (array)($_POST['fields'] ?? []);
+            $prepared = [];
+            foreach ($rawFields as $index => $field) {
+                if (!is_array($field)) {
+                    continue;
+                }
+                $prepared[] = [
+                    'key' => (string)($field['key'] ?? ''),
+                    'label' => (string)($field['label'] ?? ''),
+                    'type' => (string)($field['type'] ?? 'text'),
+                    'required' => !empty($field['required']) ? 1 : 0,
+                    'placeholder' => (string)($field['placeholder'] ?? ''),
+                    'help_text' => (string)($field['help_text'] ?? ''),
+                ];
+            }
+            $this->requisitionModel->saveFormFields($prepared);
+            $_SESSION['workflow_flash'] = 'Requisition form saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['workflow_flash'] = 'Unable to save requisition form: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/requisition-form');
     }
 
     public function index(): void
     {
         $this->requireAccess();
-        $this->view('modules/index', ['title' => 'Module Center']);
+        $companyModel = new CompanyModel();
+        $this->view('modules/index', [
+            'title' => 'Module Center',
+            'customModules' => $companyModel->getCustomModulesForCompany((int)($_SESSION['selected_company_id'] ?? 1)),
+            'companyModel' => $companyModel,
+        ]);
+    }
+
+    public function customModule(): void
+    {
+        $this->requireAccess();
+        $companyModel = new CompanyModel();
+        $companyId = (int)($_SESSION['selected_company_id'] ?? 1);
+        $moduleKey = trim((string)($_GET['module'] ?? $_GET['key'] ?? ''));
+
+        if ($moduleKey === '' || !$companyModel->hasModuleAccess($moduleKey)) {
+            $_SESSION['company_flash'] = 'This module is not enabled for the selected company.';
+            $this->redirect('/');
+        }
+
+        $customModule = $companyModel->getCustomModuleByKey($companyId, $moduleKey);
+        if ($customModule === null) {
+            $_SESSION['company_flash'] = 'This custom module could not be found.';
+            $this->redirect('/');
+        }
+
+        $this->view('modules/custom_module', [
+            'title' => (string)$customModule['module_name'],
+            'module' => $customModule,
+        ]);
     }
 
     public function workflow(): void
@@ -497,6 +569,51 @@ class ModuleController extends BaseController
             'title' => 'Payroll Portal',
             'portalPayrolls' => $portalPayrolls,
         ]);
+    }
+
+    public function accountingPayrollPortal(): void
+    {
+        $this->requireCompanyModule('accounting');
+        $employees = $this->payrollModel->getEmployees();
+        $this->view('modules/accounting_payroll_portal', [
+            'title' => 'Process Payroll',
+            'employees' => $employees,
+            'current_month' => date('Y-m'),
+        ]);
+    }
+
+    public function processAccountingPayroll(): void
+    {
+        $this->requireCompanyModule('accounting');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $_SESSION['accounting_flash'] = 'Invalid request method.';
+            $this->redirect('/modules/accounting/payroll');
+        }
+
+        try {
+            $payrollMonth = trim((string)($_POST['payroll_month'] ?? date('Y-m')));
+            $selectedEmployees = (array)($_POST['employee_ids'] ?? []);
+            $employeeIds = array_values(array_filter(array_map('intval', $selectedEmployees)));
+
+            if ($payrollMonth === '') {
+                throw new InvalidArgumentException('Payroll month is required.');
+            }
+
+            $results = $this->payrollModel->processMonthlyPayroll($payrollMonth, $employeeIds);
+            $_SESSION['accounting_flash'] = sprintf(
+                'Payroll processed: %d successful, %d failed.',
+                $results['success'] ?? 0,
+                $results['failed'] ?? 0
+            );
+
+            if (!empty($results['errors'])) {
+                $_SESSION['accounting_errors'] = $results['errors'];
+            }
+        } catch (Throwable $exception) {
+            $_SESSION['accounting_flash'] = 'Error processing payroll: ' . $exception->getMessage();
+        }
+
+        $this->redirect('/modules/accounting/payroll');
     }
 
     public function savePayroll(): void

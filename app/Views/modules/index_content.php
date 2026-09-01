@@ -10,6 +10,11 @@
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/management/procurement">Procurement</a></div>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/modules/projects">Projects</a></div>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/modules/contract-admin"><i class="bi bi-file-earmark-check me-1"></i>Contract Admin</a></div>
+            <?php foreach (($customModules ?? []) as $customModule): ?>
+                <?php $customKey = (string)$customModule['module_key']; if (!($companyModel ?? null) || !($companyModel->hasModuleAccess($customKey) ?? false)) { continue; } ?>
+                <div class="col-md-3"><a class="btn btn-outline-info w-100" href="/ERP/public/modules/custom?module=<?php echo urlencode($customKey); ?>"><?php echo htmlspecialchars((string)$customModule['module_name']); ?></a></div>
+            <?php endforeach; ?>
+            <?php if ($isSuperAdmin ?? false): ?><div class="col-md-3"><a class="btn btn-outline-dark w-100" href="/ERP/public/modules/requisition-form"><i class="bi bi-ui-checks-grid me-1"></i>Requisition Form</a></div><?php endif; ?>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/management/sales">Sales</a></div>
         </div>
     </div>

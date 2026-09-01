@@ -43,6 +43,18 @@ class CompanyModel extends Model
                 FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
             )'
         );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS custom_company_modules (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                module_key VARCHAR(80) NOT NULL,
+                module_name VARCHAR(120) NOT NULL,
+                description VARCHAR(255) NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_custom_company_module (company_id, module_key),
+                FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+            )'
+        );
         $this->query("INSERT IGNORE INTO company_modules (company_id, module_key) SELECT id, 'requisition' FROM companies WHERE is_active = 1");
         $this->query(
             'CREATE TABLE IF NOT EXISTS employee_module_access (
@@ -52,6 +64,16 @@ class CompanyModel extends Model
                 PRIMARY KEY (company_id, employee_id, module_key),
                 FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
                 FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS role_module_access (
+                company_id INT NOT NULL,
+                role_id INT NOT NULL,
+                module_key VARCHAR(50) NOT NULL,
+                PRIMARY KEY (company_id, role_id, module_key),
+                FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+                FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
             )'
         );
 
@@ -127,12 +149,95 @@ class CompanyModel extends Model
             'hr' => 'Human Resources',
             'inventory' => 'Inventory',
             'accounting' => 'Accounting and Payroll',
+            'payroll' => 'Payroll',
+            'salary_structure' => 'Salary Structure',
             'procurement' => 'Procurement',
             'requisition' => 'Requisition',
             'projects' => 'Projects',
             'contract_admin' => 'Contract Admin',
             'reports' => 'Reports',
         ];
+    }
+
+    public function availableModulesForCompany(int $companyId): array
+    {
+        $modules = self::availableModules();
+        $companyModules = $this->query('SELECT module_key, module_name FROM custom_company_modules WHERE company_id = ? ORDER BY module_name ASC, id ASC', [$companyId])->fetchAll();
+        foreach ($companyModules as $module) {
+            $moduleKey = (string)$module['module_key'];
+            $label = trim((string)$module['module_name']);
+            if ($moduleKey === '' || $label === '') {
+                continue;
+            }
+            $modules[$moduleKey] = $label;
+        }
+        return $modules;
+    }
+
+    public function allAvailableModules(): array
+    {
+        return $this->availableModulesForCompany($this->currentCompanyId());
+    }
+
+    public function getCustomModulesForCompany(int $companyId): array
+    {
+        $stmt = $this->query('SELECT id, module_key, module_name, description FROM custom_company_modules WHERE company_id = ? ORDER BY module_name ASC, id ASC', [$companyId]);
+        return $stmt->fetchAll();
+    }
+
+    public function getCustomModuleByKey(int $companyId, string $moduleKey): ?array
+    {
+        $moduleKey = trim((string)$moduleKey);
+        if ($moduleKey === '') {
+            return null;
+        }
+
+        $stmt = $this->query('SELECT id, module_key, module_name, description FROM custom_company_modules WHERE company_id = ? AND module_key = ? LIMIT 1', [$companyId, $moduleKey]);
+        $module = $stmt->fetch();
+        return $module !== false ? $module : null;
+    }
+
+    public function createCustomModule(int $companyId, string $moduleName, ?string $description = null): array
+    {
+        $companyExists = $this->query('SELECT 1 FROM companies WHERE id = ? AND is_active = 1 LIMIT 1', [$companyId])->fetchColumn();
+        if (!$companyExists) {
+            throw new InvalidArgumentException('The selected company could not be found.');
+        }
+
+        $cleanName = trim((string)$moduleName);
+        if ($cleanName === '') {
+            throw new InvalidArgumentException('The module name is required.');
+        }
+
+        $baseKey = preg_replace('/[^a-z0-9]+/i', '_', strtolower($cleanName));
+        $baseKey = trim((string)$baseKey, '_');
+        if ($baseKey === '') {
+            throw new InvalidArgumentException('The module name must contain letters or numbers.');
+        }
+
+        $moduleKey = $baseKey;
+        $counter = 1;
+        while ($this->query('SELECT 1 FROM custom_company_modules WHERE company_id = ? AND module_key = ? LIMIT 1', [$companyId, $moduleKey])->fetchColumn()) {
+            $moduleKey = $baseKey . '_' . (++$counter);
+        }
+
+        $this->query(
+            'INSERT INTO custom_company_modules (company_id, module_key, module_name, description) VALUES (?, ?, ?, ?)',
+            [$companyId, $moduleKey, $cleanName, trim((string)($description ?? '')) !== '' ? trim((string)$description) : null]
+        );
+
+        return ['key' => $moduleKey, 'name' => $cleanName, 'description' => trim((string)($description ?? '')) !== '' ? trim((string)$description) : null];
+    }
+
+    public function deleteCustomModule(int $companyId, string $moduleKey): void
+    {
+        $moduleKey = trim((string)$moduleKey);
+        if ($moduleKey === '') {
+            throw new InvalidArgumentException('The module key is required.');
+        }
+
+        $this->query('DELETE FROM custom_company_modules WHERE company_id = ? AND module_key = ?', [$companyId, $moduleKey]);
+        $this->query('DELETE FROM company_modules WHERE company_id = ? AND module_key = ?', [$companyId, $moduleKey]);
     }
 
     public function getModuleAccess(int $companyId): array
@@ -148,7 +253,7 @@ class CompanyModel extends Model
         if (!$companyExists) {
             throw new InvalidArgumentException('The company could not be found while saving module access.');
         }
-        $allowed = array_keys(self::availableModules());
+        $allowed = array_keys($this->availableModulesForCompany($companyId));
         $modules = array_values(array_intersect($allowed, array_map('strval', $modules)));
         $this->query('DELETE FROM company_modules WHERE company_id = ?', [$companyId]);
         foreach ($modules as $module) {
@@ -161,11 +266,12 @@ class CompanyModel extends Model
         if ($moduleKey === 'dashboard') {
             return true;
         }
-        $configured = $this->query('SELECT COUNT(*) FROM company_modules WHERE company_id = ?', [$this->currentCompanyId()])->fetchColumn();
+        $companyId = $this->currentCompanyId();
+        $configured = $this->query('SELECT COUNT(*) FROM company_modules WHERE company_id = ?', [$companyId])->fetchColumn();
         if ((int)$configured === 0) {
-            return array_key_exists($moduleKey, self::availableModules());
+            return array_key_exists($moduleKey, $this->availableModulesForCompany($companyId));
         }
-        $stmt = $this->query('SELECT 1 FROM company_modules WHERE company_id = ? AND module_key = ? LIMIT 1', [$this->currentCompanyId(), $moduleKey]);
+        $stmt = $this->query('SELECT 1 FROM company_modules WHERE company_id = ? AND module_key = ? LIMIT 1', [$companyId, $moduleKey]);
         return (bool)$stmt->fetchColumn();
     }
 
@@ -176,10 +282,30 @@ class CompanyModel extends Model
         }
         $companyId = $this->currentCompanyId();
         $configured = $this->query('SELECT 1 FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key = "__configured__" LIMIT 1', [$companyId, $employeeId])->fetchColumn();
-        if ((int)$configured === 0) {
-            return $this->hasModuleAccess($moduleKey);
+        if ((int)$configured !== 0) {
+            return (bool)$this->query('SELECT 1 FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key = ? LIMIT 1', [$companyId, $employeeId, $moduleKey])->fetchColumn();
         }
-        return (bool)$this->query('SELECT 1 FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key = ? LIMIT 1', [$companyId, $employeeId, $moduleKey])->fetchColumn();
+        $roleId = (int)$this->query('SELECT role_id FROM users WHERE employee_id = ? AND (company_id = ? OR company_id IS NULL) ORDER BY id DESC LIMIT 1', [$employeeId, $companyId])->fetchColumn();
+        if ($roleId > 0 && $this->hasRoleModuleConfiguration($roleId)) {
+            return (bool)$this->query('SELECT 1 FROM role_module_access WHERE company_id = ? AND role_id = ? AND module_key = ? LIMIT 1', [$companyId, $roleId, $moduleKey])->fetchColumn();
+        }
+        return $this->hasModuleAccess($moduleKey);
+    }
+
+    public function hasRoleModuleAccess(int $roleId, string $moduleKey): bool
+    {
+        if ($moduleKey === 'dashboard') {
+            return true;
+        }
+        $companyId = $this->currentCompanyId();
+        if ($roleId <= 0) {
+            return false;
+        }
+        $configured = $this->query('SELECT 1 FROM role_module_access WHERE company_id = ? AND role_id = ? AND module_key = "__configured__" LIMIT 1', [$companyId, $roleId])->fetchColumn();
+        if ((int)$configured !== 0) {
+            return (bool)$this->query('SELECT 1 FROM role_module_access WHERE company_id = ? AND role_id = ? AND module_key = ? LIMIT 1', [$companyId, $roleId, $moduleKey])->fetchColumn();
+        }
+        return $this->hasModuleAccess($moduleKey);
     }
 
     public function isStoreDepartmentEmployee(int $employeeId): bool
@@ -198,9 +324,32 @@ class CompanyModel extends Model
         return array_values(array_map(static fn (array $row): string => (string)$row['module_key'], $this->query('SELECT module_key FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key <> "__configured__" ORDER BY module_key ASC', [$this->currentCompanyId(), $employeeId])->fetchAll()));
     }
 
+    public function getRoleModuleAccess(int $roleId): array
+    {
+        return array_values(array_map(static fn (array $row): string => (string)$row['module_key'], $this->query('SELECT module_key FROM role_module_access WHERE company_id = ? AND role_id = ? AND module_key <> "__configured__" ORDER BY module_key ASC', [$this->currentCompanyId(), $roleId])->fetchAll()));
+    }
+
+    public function getRoleModuleAccessMap(): array
+    {
+        $access = [];
+        $stmt = $this->query('SELECT id FROM roles WHERE company_id = ? ORDER BY name ASC', [$this->currentCompanyId()]);
+        foreach ($stmt->fetchAll() as $row) {
+            $roleId = (int)$row['id'];
+            if ($this->hasRoleModuleConfiguration($roleId)) {
+                $access[$roleId] = $this->getRoleModuleAccess($roleId);
+            }
+        }
+        return $access;
+    }
+
     public function hasEmployeeModuleConfiguration(int $employeeId): bool
     {
         return (bool)$this->query('SELECT 1 FROM employee_module_access WHERE company_id = ? AND employee_id = ? AND module_key = "__configured__" LIMIT 1', [$this->currentCompanyId(), $employeeId])->fetchColumn();
+    }
+
+    public function hasRoleModuleConfiguration(int $roleId): bool
+    {
+        return (bool)$this->query('SELECT 1 FROM role_module_access WHERE company_id = ? AND role_id = ? AND module_key = "__configured__" LIMIT 1', [$this->currentCompanyId(), $roleId])->fetchColumn();
     }
 
     public function saveEmployeeModuleAccess(int $employeeId, array $modules): void
@@ -209,12 +358,27 @@ class CompanyModel extends Model
         if (!$this->query('SELECT 1 FROM employees WHERE id = ? AND company_id = ? LIMIT 1', [$employeeId, $companyId])->fetchColumn()) {
             throw new InvalidArgumentException('The selected employee does not belong to this company.');
         }
-        $allowed = array_keys(self::availableModules());
+        $allowed = array_keys($this->availableModulesForCompany($companyId));
         $modules = array_values(array_intersect($allowed, array_map('strval', $modules)));
         $this->query('DELETE FROM employee_module_access WHERE company_id = ? AND employee_id = ?', [$companyId, $employeeId]);
         $this->query('INSERT INTO employee_module_access (company_id, employee_id, module_key) VALUES (?, ?, "__configured__")', [$companyId, $employeeId]);
         foreach ($modules as $module) {
             $this->query('INSERT INTO employee_module_access (company_id, employee_id, module_key) VALUES (?, ?, ?)', [$companyId, $employeeId, $module]);
+        }
+    }
+
+    public function saveRoleModuleAccess(int $roleId, array $modules): void
+    {
+        $companyId = $this->currentCompanyId();
+        if (!$this->query('SELECT 1 FROM roles WHERE id = ? AND company_id = ? LIMIT 1', [$roleId, $companyId])->fetchColumn()) {
+            throw new InvalidArgumentException('The selected role does not belong to this company.');
+        }
+        $allowed = array_keys($this->availableModulesForCompany($companyId));
+        $modules = array_values(array_intersect($allowed, array_map('strval', $modules)));
+        $this->query('DELETE FROM role_module_access WHERE company_id = ? AND role_id = ?', [$companyId, $roleId]);
+        $this->query('INSERT INTO role_module_access (company_id, role_id, module_key) VALUES (?, ?, "__configured__")', [$companyId, $roleId]);
+        foreach ($modules as $module) {
+            $this->query('INSERT INTO role_module_access (company_id, role_id, module_key) VALUES (?, ?, ?)', [$companyId, $roleId, $module]);
         }
     }
 

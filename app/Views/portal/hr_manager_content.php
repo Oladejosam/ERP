@@ -10,7 +10,7 @@
         <div class="row g-3">
             <div class="col-md-6 col-xl-4"><a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/management/employees"><i class="bi bi-people me-2"></i>Employees</a></div>
             <div class="col-md-6 col-xl-4"><a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/management/hr"><i class="bi bi-person-badge me-2"></i>Human Resources</a></div>
-            <div class="col-md-6 col-xl-4"><a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/management/module-access"><i class="bi bi-person-lock me-2"></i>Staff Module Access</a></div>
+            <div class="col-md-6 col-xl-4"><a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/management/module-access"><i class="bi bi-person-lock me-2"></i>Role Module Access</a></div>
         </div>
     </div>
 </div>

@@ -1,9 +1,14 @@
 <div class="card shadow-sm border-0">
     <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4 class="fw-bold">Payroll Management</h4>
-            <div class="d-flex gap-2 align-items-center">
-                <input id="payrollSearch" type="search" class="form-control form-control-sm" placeholder="Search payroll" style="min-width:220px;" />
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <h4 class="fw-bold mb-1">Accounting & Payroll Dashboard</h4>
+                <small class="text-muted">Salary processing, reports, and employee pay records</small>
+            </div>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <a href="/ERP/public/modules/accounting/payroll" class="btn btn-primary btn-sm">Process Payroll</a>
+                <a href="/ERP/public/management/payroll-reports" class="btn btn-outline-primary btn-sm">Payroll Reports</a>
+                <a href="/ERP/public/management/payroll-configuration" class="btn btn-outline-secondary btn-sm">Settings</a>
                 <a href="/ERP/public/portal/payroll" class="btn btn-outline-secondary btn-sm">Employee Portal</a>
                 <form method="post" action="/ERP/public/modules/accounting/send-all" class="d-inline">
                     <button type="submit" class="btn btn-warning btn-sm">Send All</button>
@@ -16,7 +21,46 @@
                     <button type="submit" class="btn btn-secondary btn-sm">Upload</button>
                 </form>
                 <a href="/ERP/public/modules/accounting/template" class="btn btn-info btn-sm">Download Template</a>
-                <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPayrollModal">New Entry</button>
+                <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addPayrollModal">New Entry</button>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white h-100 border-0">
+                    <div class="card-body">
+                        <small class="text-white-50">This Month</small>
+                        <h4 class="fw-bold mb-0"><?php echo count($payrolls); ?></h4>
+                        <small>Payroll records</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white h-100 border-0">
+                    <div class="card-body">
+                        <small class="text-white-50">Gross Pay</small>
+                        <h4 class="fw-bold mb-0">₦<?php echo number_format(array_sum(array_map(fn($p) => (float)($p['basic_salary'] + $p['allowances']), $payrolls)), 2); ?></h4>
+                        <small>Across employees</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white h-100 border-0">
+                    <div class="card-body">
+                        <small class="text-white-50">Deductions</small>
+                        <h4 class="fw-bold mb-0">₦<?php echo number_format(array_sum(array_map(fn($p) => (float)$p['deductions'], $payrolls)), 2); ?></h4>
+                        <small>Scheduled deductions</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white h-100 border-0">
+                    <div class="card-body">
+                        <small class="text-white-50">Net Pay</small>
+                        <h4 class="fw-bold mb-0">₦<?php echo number_format(array_sum(array_map(fn($p) => (float)$p['net_pay'], $payrolls)), 2); ?></h4>
+                        <small>Disbursable pay</small>
+                    </div>
+                </div>
             </div>
         </div>
 

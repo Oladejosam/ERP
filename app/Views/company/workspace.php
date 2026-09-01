@@ -82,6 +82,53 @@ foreach ($companies as $company) {
                         </div>
                         <button class="btn btn-success" type="submit">Create and Open Company</button>
                     </form>
+
+                    <hr class="my-4">
+
+                    <h2 id="custom-modules" class="h5 mb-3">Create custom module for a company</h2>
+                    <form method="post" action="/ERP/public/company/custom-module/create">
+                        <div class="mb-3">
+                            <label class="form-label">Company</label>
+                            <select class="form-select" name="company_id" required>
+                                <option value="">Select company</option>
+                                <?php foreach ($companies as $company): ?>
+                                    <option value="<?php echo (int)$company['id']; ?>" <?php echo (int)($company['id']) === (int)$selectedCompanyId ? 'selected' : ''; ?>><?php echo htmlspecialchars($company['company_name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Module name</label>
+                            <input class="form-control" name="module_name" placeholder="e.g. Fleet Management" maxlength="120" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" name="module_description" rows="2" maxlength="255" placeholder="What is this module for?"></textarea>
+                        </div>
+                        <button class="btn btn-outline-primary" type="submit">Create Module</button>
+                    </form>
+
+                    <?php foreach ($companies as $company): ?>
+                        <?php $customModules = (new CompanyModel())->getCustomModulesForCompany((int)$company['id']); if ($customModules === []): continue; endif; ?>
+                        <div class="border rounded p-3 mt-4">
+                            <div class="fw-semibold mb-2"><?php echo htmlspecialchars($company['company_name']); ?> custom modules</div>
+                            <div class="list-group list-group-flush">
+                                <?php foreach ($customModules as $customModule): ?>
+                                    <div class="list-group-item px-0 d-flex justify-content-between align-items-center gap-3">
+                                        <div>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars((string)$customModule['module_name']); ?></div>
+                                            <?php if (!empty($customModule['description'])): ?><small class="text-muted"><?php echo htmlspecialchars((string)$customModule['description']); ?></small><?php endif; ?>
+                                            <div class="small text-primary"><?php echo htmlspecialchars((string)$customModule['module_key']); ?></div>
+                                        </div>
+                                        <form method="post" action="/ERP/public/company/custom-module/delete" onsubmit="return confirm('Delete this custom module from this company?');">
+                                            <input type="hidden" name="company_id" value="<?php echo (int)$company['id']; ?>">
+                                            <input type="hidden" name="module_key" value="<?php echo htmlspecialchars((string)$customModule['module_key']); ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                                        </form>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
                 </div>
             </div>
         </div>

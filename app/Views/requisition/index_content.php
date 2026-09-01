@@ -34,22 +34,31 @@
                         <label class="form-label" for="requisitionDate">* Date</label>
                         <input id="requisitionDate" type="date" class="form-control" name="date" value="<?php echo date('Y-m-d'); ?>" required>
                     </div>
-                    <div class="mb-3">
-                        <?php if (!empty($isSiteQuantitySurveyor)): ?>
+                    <?php foreach (($requisitionFields ?? []) as $field): $fieldKey = (string)($field['key'] ?? ''); $fieldType = strtolower((string)($field['type'] ?? 'text')); $fieldLabel = (string)($field['label'] ?? ucfirst(str_replace('_', ' ', $fieldKey))); $required = !empty($field['required']); $placeholder = (string)($field['placeholder'] ?? ''); $helpText = (string)($field['help_text'] ?? ''); if ($fieldKey === 'project_title' && !empty($isSiteQuantitySurveyor)) { continue; } if ($fieldKey === 'project_id') { continue; }
+                        $inputName = $fieldKey; $commonAttributes = 'name="' . htmlspecialchars($inputName, ENT_QUOTES) . '"' . ($required ? ' required' : '') . ($placeholder !== '' ? ' placeholder="' . htmlspecialchars($placeholder, ENT_QUOTES) . '"' : '');
+                        if ($fieldKey === 'project_title') {
+                            if (!empty($isSiteQuantitySurveyor)): continue; endif; ?>
+                            <div class="mb-3">
+                                <label class="form-label" for="projectTitle"><?php echo $required ? '*' : ''; ?> <?php echo htmlspecialchars($fieldLabel); ?></label>
+                                <input id="projectTitle" class="form-control" name="project_title" maxlength="150" <?php echo $required ? 'required' : ''; ?>>
+                            </div>
+                        <?php } else if ($fieldType === 'textarea') { ?>
+                            <div class="mb-3"><label class="form-label" for="field_<?php echo htmlspecialchars($fieldKey); ?>"><?php echo $required ? '*' : ''; ?> <?php echo htmlspecialchars($fieldLabel); ?></label><textarea id="field_<?php echo htmlspecialchars($fieldKey); ?>" class="form-control" name="<?php echo htmlspecialchars($fieldKey); ?>" rows="3" <?php echo $required ? 'required' : ''; ?><?php echo $placeholder !== '' ? ' placeholder="' . htmlspecialchars($placeholder, ENT_QUOTES) . '"' : ''; ?>></textarea><?php echo $helpText !== '' ? '<div class="form-text">' . htmlspecialchars($helpText) . '</div>' : ''; ?></div>
+                        <?php } else if ($fieldType === 'date') { ?>
+                            <div class="mb-3"><label class="form-label" for="field_<?php echo htmlspecialchars($fieldKey); ?>"><?php echo $required ? '*' : ''; ?> <?php echo htmlspecialchars($fieldLabel); ?></label><input id="field_<?php echo htmlspecialchars($fieldKey); ?>" type="date" class="form-control" name="<?php echo htmlspecialchars($fieldKey); ?>" <?php echo $required ? 'required' : ''; ?><?php echo $placeholder !== '' ? ' placeholder="' . htmlspecialchars($placeholder, ENT_QUOTES) . '"' : ''; ?>><?php echo $helpText !== '' ? '<div class="form-text">' . htmlspecialchars($helpText) . '</div>' : ''; ?></div>
+                        <?php } else if ($fieldType === 'number') { ?>
+                            <div class="mb-3"><label class="form-label" for="field_<?php echo htmlspecialchars($fieldKey); ?>"><?php echo $required ? '*' : ''; ?> <?php echo htmlspecialchars($fieldLabel); ?></label><input id="field_<?php echo htmlspecialchars($fieldKey); ?>" type="number" class="form-control" name="<?php echo htmlspecialchars($fieldKey); ?>" step="0.01" <?php echo $required ? 'required' : ''; ?><?php echo $placeholder !== '' ? ' placeholder="' . htmlspecialchars($placeholder, ENT_QUOTES) . '"' : ''; ?>><?php echo $helpText !== '' ? '<div class="form-text">' . htmlspecialchars($helpText) . '</div>' : ''; ?></div>
+                        <?php } else { ?>
+                            <div class="mb-3"><label class="form-label" for="field_<?php echo htmlspecialchars($fieldKey); ?>"><?php echo $required ? '*' : ''; ?> <?php echo htmlspecialchars($fieldLabel); ?></label><input id="field_<?php echo htmlspecialchars($fieldKey); ?>" class="form-control" name="<?php echo htmlspecialchars($fieldKey); ?>" <?php echo $required ? 'required' : ''; ?><?php echo $placeholder !== '' ? ' placeholder="' . htmlspecialchars($placeholder, ENT_QUOTES) . '"' : ''; ?>><?php echo $helpText !== '' ? '<div class="form-text">' . htmlspecialchars($helpText) . '</div>' : ''; ?></div>
+                        <?php } ?>
+                    <?php endforeach; ?>
+                    <?php if (!empty($isSiteQuantitySurveyor)): ?>
+                        <div class="mb-3">
                             <label class="form-label" for="projectSite">* Project Site</label>
                             <select id="projectSite" class="form-select" name="project_id" required><option value="">Select project site</option><?php foreach (($projects ?? []) as $project): ?><option value="<?php echo (int)$project['id']; ?>"><?php echo htmlspecialchars($project['project_number'] . ' - ' . $project['name']); ?></option><?php endforeach; ?></select>
                             <div class="form-text">This requisition will be filed against the selected project.</div>
-                        <?php else: ?>
-                            <label class="form-label" for="projectTitle">* Project Title</label>
-                            <input id="projectTitle" class="form-control" name="project_title" maxlength="150" required>
-                        <?php endif; ?>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="trade">Trade</label>
-                        <input id="trade" class="form-control" name="trade" maxlength="100">
-                    </div>
-                    <div class="mb-3"><label class="form-label" for="supplier">Supplier</label><input id="supplier" class="form-control" name="supplier" maxlength="150"></div>
-                    <div class="mb-3"><label class="form-label" for="supplierAddress">Supplier Address</label><textarea id="supplierAddress" class="form-control" name="supplier_address" rows="2"></textarea></div>
+                        </div>
+                    <?php endif; ?>
                     <div class="mb-3"><label class="form-label">Tag colleagues for approval</label><div class="border rounded p-2" style="max-height: 150px; overflow-y: auto;"><?php foreach (($companyUsers ?? []) as $companyUser): ?><label class="form-check"><input class="form-check-input" type="checkbox" name="participant_ids[]" value="<?php echo (int)$companyUser['id']; ?>"><span class="form-check-label"><?php echo htmlspecialchars($companyUser['name']); ?> <small class="text-muted">(<?php echo htmlspecialchars($companyUser['email']); ?>)</small></span></label><?php endforeach; ?></div><div class="form-text">Tagged colleagues will join the temporary requisition discussion.</div></div>
                     <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="urgent" id="requisitionUrgent" value="1"><label class="form-check-label" for="requisitionUrgent">Urgent requisition</label></div>
                     <div class="d-flex justify-content-between align-items-center mb-2"><h6 class="fw-bold mb-0">What is being requested</h6><button type="button" class="btn btn-sm btn-outline-primary" id="addRequisitionItem">Add item</button></div>

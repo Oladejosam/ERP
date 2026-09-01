@@ -13,6 +13,7 @@ require_once APP_ROOT . '/app/Models/InventoryModel.php';
 require_once APP_ROOT . '/app/Models/ProjectModel.php';
 require_once APP_ROOT . '/app/Models/CompanyModel.php';
 require_once APP_ROOT . '/app/Models/PurchaseOrderModel.php';
+require_once APP_ROOT . '/app/Models/PayrollModel.php';
 
 class ManagementController extends BaseController
 {
@@ -24,6 +25,7 @@ class ManagementController extends BaseController
     private ProjectModel $projectModel;
     private CompanyModel $companyModel;
     private PurchaseOrderModel $purchaseOrderModel;
+    private PayrollModel $payrollModel;
 
     public function __construct()
     {
@@ -35,6 +37,7 @@ class ManagementController extends BaseController
         $this->projectModel = new ProjectModel();
         $this->companyModel = new CompanyModel();
         $this->purchaseOrderModel = new PurchaseOrderModel();
+        $this->payrollModel = new PayrollModel();
     }
 
     public function staffPortal(): void
@@ -156,30 +159,70 @@ class ManagementController extends BaseController
     public function moduleAccess(): void
     {
         $this->requireAccess();
-        $managedEmployeeIds = $this->requireStaffAccessManager();
-        $employees = array_values(array_filter($this->employeeModel->getEmployees(), static fn (array $employee): bool => in_array((int)$employee['id'], $managedEmployeeIds, true)));
+        $this->requireStaffAccessManager();
+        $roles = $this->roleModel->getRoles();
+        $departments = $this->employeeModel->getDepartments();
+        $assignedRoleIds = [];
+        $departmentGroups = [];
+        foreach ($departments as $department) {
+            $departmentRoles = [];
+            foreach ($department['role_ids'] ?? [] as $roleId) {
+                $roleId = (int)$roleId;
+                $role = null;
+                foreach ($roles as $candidate) {
+                    if ((int)$candidate['id'] === $roleId) {
+                        $role = $candidate;
+                        break;
+                    }
+                }
+                if ($role === null) {
+                    continue;
+                }
+                $assignedRoleIds[$roleId] = true;
+                $departmentRoles[] = [
+                    'id' => $roleId,
+                    'name' => (string)$role['name'],
+                    'modules' => $this->companyModel->getRoleModuleAccess($roleId),
+                ];
+            }
+            if ($departmentRoles !== []) {
+                $departmentGroups[] = [
+                    'name' => trim((string)($department['name'] ?? '')) ?: 'Unassigned Department',
+                    'roles' => $departmentRoles,
+                ];
+            }
+        }
+        $unassignedRoles = [];
+        foreach ($roles as $role) {
+            $roleId = (int)$role['id'];
+            if (!isset($assignedRoleIds[$roleId])) {
+                $unassignedRoles[] = [
+                    'id' => $roleId,
+                    'name' => (string)$role['name'],
+                    'modules' => $this->companyModel->getRoleModuleAccess($roleId),
+                ];
+            }
+        }
         $this->view('management/module_access', [
-            'title' => 'Department Staff Module Access',
-            'employees' => $employees,
+            'title' => 'Role Module Access',
+            'departmentGroups' => $departmentGroups,
+            'unassignedRoles' => $unassignedRoles,
             'modules' => array_diff_key(CompanyModel::availableModules(), ['dashboard' => true]),
-            'access' => $this->getEmployeeModuleAccessMap(),
+            'access' => $this->companyModel->getRoleModuleAccessMap(),
         ]);
     }
 
     public function saveModuleAccess(): void
     {
         $this->requireAccess();
-        $managedEmployeeIds = $this->requireStaffAccessManager();
+        $this->requireStaffAccessManager();
         try {
-            foreach ((array)($_POST['employee_modules'] ?? []) as $employeeId => $modules) {
-                if (!in_array((int)$employeeId, $managedEmployeeIds, true)) {
-                    throw new InvalidArgumentException('You can only manage staff within your reporting authority.');
-                }
-                $this->companyModel->saveEmployeeModuleAccess((int)$employeeId, (array)$modules);
+            foreach ((array)($_POST['role_modules'] ?? []) as $roleId => $modules) {
+                $this->companyModel->saveRoleModuleAccess((int)$roleId, (array)$modules);
             }
-            $_SESSION['employee_flash'] = 'Staff module access saved successfully.';
+            $_SESSION['employee_flash'] = 'Role module access saved successfully.';
         } catch (Throwable $exception) {
-            $_SESSION['employee_flash'] = 'Unable to save staff module access: ' . $exception->getMessage();
+            $_SESSION['employee_flash'] = 'Unable to save role module access: ' . $exception->getMessage();
         }
         $this->redirect('/management/module-access');
     }
@@ -201,7 +244,7 @@ class ManagementController extends BaseController
         $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
         $managedEmployeeIds = $this->companyModel->getManagedEmployeeIds((int)($_SESSION['user']['employee_id'] ?? 0), (int)($_SESSION['user']['role_id'] ?? 0), $roleName);
         if ($managedEmployeeIds === []) {
-            $_SESSION['company_flash'] = 'Only the Head of Human Resource, the top organogram role, or an authorized department head can manage staff module access.';
+            $_SESSION['company_flash'] = 'Only the Head of Human Resource, the top organogram role, or an authorized department head can manage role module access.';
             $this->redirect('/');
         }
         return $managedEmployeeIds;
@@ -1127,6 +1170,7 @@ class ManagementController extends BaseController
             'isSiteQuantitySurveyor' => $isSiteQuantitySurveyor,
             'dispatchRequests' => $isStorePersonnel || $isSuperAdmin ? $this->requisitionModel->getPendingDispatchRequests() : [],
             'isStoreApprover' => $isStorePersonnel || $isSuperAdmin,
+            'requisitionFields' => $this->requisitionModel->getFormFields(),
         ]);
     }
 
@@ -1233,6 +1277,28 @@ class ManagementController extends BaseController
         $this->view('requisition/detail', ['title' => 'Requisition Discussion', 'requisition' => $requisition, 'companyUsers' => $this->requisitionModel->getCompanyUsers()]);
     }
 
+    public function adjustRequisitionItemQuantity(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $requisitionId = (int)($_POST['requisition_id'] ?? 0);
+        $itemId = (int)($_POST['item_id'] ?? 0);
+        $delta = (float)($_POST['delta'] ?? 0);
+        $direction = strtolower(trim((string)($_POST['direction'] ?? '')));
+        if ($direction === 'decrease') {
+            $delta = -abs($delta);
+        } elseif ($direction === 'increase') {
+            $delta = abs($delta);
+        }
+
+        try {
+            $this->requisitionModel->adjustItemQuantity($requisitionId, $itemId, (int)($_SESSION['user']['id'] ?? 0), $delta, (string)($_POST['reason'] ?? ''));
+            $_SESSION['requisition_flash'] = 'Requested quantity updated successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['requisition_flash'] = 'Unable to update quantity: ' . $exception->getMessage();
+        }
+        $this->redirect('/requisition/view?id=' . $requisitionId);
+    }
+
     public function addRequisitionMessage(): void
     {
         $this->requireCompanyModule('requisition');
@@ -1287,5 +1353,393 @@ class ManagementController extends BaseController
     {
         $this->requireAccess();
         $this->view('modules/index', ['title' => 'Sales']);
+    }
+
+    // ========== SALARY STRUCTURE MANAGEMENT ==========
+
+    public function manageSalaryStructures(): void
+    {
+        $this->requireCompanyModule('salary_structure');
+
+        $userRoleId = (int)($_SESSION['user']['role_id'] ?? 0);
+        $userEmployeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $companyModel = new CompanyModel();
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        $canManageSalaryStructure = in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)
+            || ($userRoleId > 0 && $companyModel->hasRoleModuleAccess($userRoleId, 'salary_structure'))
+            || ($userEmployeeId > 0 && $companyModel->hasEmployeeModuleAccess($userEmployeeId, 'salary_structure'));
+
+        if (!$canManageSalaryStructure) {
+            $_SESSION['company_flash'] = 'You do not have permission to manage salary structures.';
+            $this->redirect('/');
+        }
+
+        $structures = $this->payrollModel->getAllSalaryStructures();
+        $roleStructures = $this->payrollModel->getAllRoleSalaryStructures();
+        $employees = $this->payrollModel->getEmployees();
+        $roles = $this->roleModel->getRoles();
+        $this->view('management/salary_structures', [
+            'title' => 'Salary Structures',
+            'structures' => $structures,
+            'roleStructures' => $roleStructures,
+            'employees' => $employees,
+            'roles' => $roles,
+            'canManageSalaryStructure' => true,
+        ]);
+    }
+
+    public function saveSalaryStructure(): void
+    {
+        $this->requireCompanyModule('salary_structure');
+        $userRoleId = (int)($_SESSION['user']['role_id'] ?? 0);
+        $userEmployeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $companyModel = new CompanyModel();
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        $canManageSalaryStructure = in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)
+            || ($userRoleId > 0 && $companyModel->hasRoleModuleAccess($userRoleId, 'salary_structure'))
+            || ($userEmployeeId > 0 && $companyModel->hasEmployeeModuleAccess($userEmployeeId, 'salary_structure'));
+
+        if (!$canManageSalaryStructure) {
+            $_SESSION['payroll_flash'] = 'You do not have permission to update salary structures.';
+            $this->redirect('/management/salary-structures');
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $_SESSION['payroll_flash'] = 'Invalid request method.';
+            $this->redirect('/management/salary-structures');
+        }
+
+        try {
+            $employeeId = (int)($_POST['employee_id'] ?? 0);
+            $roleId = (int)($_POST['role_id'] ?? 0);
+
+            if ($roleId > 0) {
+                $this->payrollModel->saveRoleSalaryStructure($roleId, $_POST);
+                $_SESSION['payroll_flash'] = 'Role salary structure saved successfully.';
+            } elseif ($employeeId > 0) {
+                $this->payrollModel->saveSalaryStructure($employeeId, $_POST);
+                $_SESSION['payroll_flash'] = 'Employee salary structure saved successfully.';
+            } else {
+                throw new InvalidArgumentException('Employee or role is required.');
+            }
+        } catch (Throwable $exception) {
+            $_SESSION['payroll_flash'] = 'Error saving salary structure: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/salary-structures');
+    }
+
+    // ========== SALARY ADVANCE MANAGEMENT ==========
+
+    public function manageSalaryAdvances(): void
+    {
+        $this->requireCompanyModule('payroll');
+        $advances = $this->payrollModel->getSalaryAdvances();
+        $employees = $this->payrollModel->getEmployees();
+        $this->view('management/salary_advances', [
+            'title' => 'Salary Advances',
+            'advances' => $advances,
+            'employees' => $employees
+        ]);
+    }
+
+    public function requestSalaryAdvance(): void
+    {
+        $this->requireCompanyModule('payroll');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $_SESSION['payroll_flash'] = 'Invalid request method.';
+            $this->redirect('/management/salary-advances');
+        }
+
+        try {
+            $employeeId = (int)($_POST['employee_id'] ?? 0);
+            $amount = (float)($_POST['amount'] ?? 0);
+            $remarks = trim((string)($_POST['remarks'] ?? ''));
+
+            if ($employeeId <= 0) {
+                throw new InvalidArgumentException('Employee is required.');
+            }
+            if ($amount <= 0) {
+                throw new InvalidArgumentException('Amount must be greater than 0.');
+            }
+
+            $this->payrollModel->requestSalaryAdvance($employeeId, $amount, $remarks);
+            $_SESSION['payroll_flash'] = 'Salary advance request created successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['payroll_flash'] = 'Error creating advance request: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/salary-advances');
+    }
+
+    public function approveSalaryAdvance(): void
+    {
+        $this->requireCompanyModule('payroll');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'Invalid request method']);
+            return;
+        }
+
+        try {
+            $advanceId = (int)($_POST['advance_id'] ?? 0);
+            $userId = (int)($_SESSION['user']['id'] ?? 0);
+
+            if ($advanceId <= 0) {
+                throw new InvalidArgumentException('Advance ID is required.');
+            }
+
+            $this->payrollModel->approveSalaryAdvance($advanceId, $userId);
+            $this->json(['success' => true, 'message' => 'Salary advance approved successfully.']);
+        } catch (Throwable $exception) {
+            $this->json(['error' => $exception->getMessage()], 400);
+        }
+    }
+
+    public function rejectSalaryAdvance(): void
+    {
+        $this->requireCompanyModule('payroll');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'Invalid request method']);
+            return;
+        }
+
+        try {
+            $advanceId = (int)($_POST['advance_id'] ?? 0);
+            $reason = trim((string)($_POST['reason'] ?? ''));
+
+            if ($advanceId <= 0) {
+                throw new InvalidArgumentException('Advance ID is required.');
+            }
+
+            $this->payrollModel->rejectSalaryAdvance($advanceId, $reason);
+            $this->json(['success' => true, 'message' => 'Salary advance rejected.']);
+        } catch (Throwable $exception) {
+            $this->json(['error' => $exception->getMessage()], 400);
+        }
+    }
+
+    // ========== EMPLOYEE LOAN MANAGEMENT ==========
+
+    public function manageEmployeeLoans(): void
+    {
+        $this->requireCompanyModule('payroll');
+        $loans = $this->payrollModel->getEmployeeLoans();
+        $employees = $this->payrollModel->getEmployees();
+        $this->view('management/employee_loans', [
+            'title' => 'Employee Loans',
+            'loans' => $loans,
+            'employees' => $employees
+        ]);
+    }
+
+    public function createEmployeeLoan(): void
+    {
+        $this->requireCompanyModule('payroll');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $_SESSION['payroll_flash'] = 'Invalid request method.';
+            $this->redirect('/management/employee-loans');
+        }
+
+        try {
+            $employeeId = (int)($_POST['employee_id'] ?? 0);
+            if ($employeeId <= 0) {
+                throw new InvalidArgumentException('Employee is required.');
+            }
+
+            $loanId = $this->payrollModel->createEmployeeLoan($employeeId, $_POST);
+            $_SESSION['payroll_flash'] = 'Employee loan created successfully. EMI schedule generated.';
+        } catch (Throwable $exception) {
+            $_SESSION['payroll_flash'] = 'Error creating loan: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/employee-loans');
+    }
+
+    public function viewEmployeeLoan(): void
+    {
+        $this->requireCompanyModule('payroll');
+        $loanId = (int)($_GET['id'] ?? 0);
+        $loan = $this->payrollModel->getEmployeeLoan($loanId);
+
+        if (!$loan) {
+            $_SESSION['payroll_flash'] = 'Loan not found.';
+            $this->redirect('/management/employee-loans');
+        }
+
+        $this->view('management/loan_detail', [
+            'title' => 'Loan Details',
+            'loan' => $loan
+        ]);
+    }
+
+    public function markLoanInstallmentPaid(): void
+    {
+        $this->requireCompanyModule('payroll');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->json(['error' => 'Invalid request method']);
+            return;
+        }
+
+        try {
+            $installmentId = (int)($_POST['installment_id'] ?? 0);
+            if ($installmentId <= 0) {
+                throw new InvalidArgumentException('Installment ID is required.');
+            }
+
+            $this->payrollModel->markLoanInstallmentPaid($installmentId);
+            $this->json(['success' => true, 'message' => 'Loan installment marked as paid.']);
+        } catch (Throwable $exception) {
+            $this->json(['error' => $exception->getMessage()], 400);
+        }
+    }
+
+    // ========== PAYROLL PROCESSING ==========
+
+    public function processPayroll(): void
+    {
+        $this->requireCompanyModule('payroll');
+        $employees = $this->payrollModel->getEmployees();
+        $this->view('management/payroll_processing', [
+            'title' => 'Payroll Processing',
+            'employees' => $employees,
+            'current_month' => date('Y-m')
+        ]);
+    }
+
+    public function runPayroll(): void
+    {
+        $this->requireCompanyModule('payroll');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $_SESSION['payroll_flash'] = 'Invalid request method.';
+            $this->redirect('/management/process-payroll');
+        }
+
+        try {
+            $payrollMonth = trim((string)($_POST['payroll_month'] ?? date('Y-m')));
+            $selectedEmployees = (array)($_POST['employee_ids'] ?? []);
+
+            if ($payrollMonth === '') {
+                throw new InvalidArgumentException('Payroll month is required.');
+            }
+
+            $employeeIds = !empty($selectedEmployees) 
+                ? array_map('intval', array_filter($selectedEmployees))
+                : [];
+
+            $results = $this->payrollModel->processMonthlyPayroll($payrollMonth, $employeeIds);
+
+            $_SESSION['payroll_flash'] = sprintf(
+                'Payroll processed: %d successful, %d failed.',
+                $results['success'],
+                $results['failed']
+            );
+
+            if (!empty($results['errors'])) {
+                $_SESSION['payroll_errors'] = $results['errors'];
+            }
+        } catch (Throwable $exception) {
+            $_SESSION['payroll_flash'] = 'Error processing payroll: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/process-payroll');
+    }
+
+    public function payrollReports(): void
+    {
+        $this->requireCompanyModule('payroll');
+        $payrolls = $this->payrollModel->getPayrolls();
+        $this->view('management/payroll_reports', [
+            'title' => 'Payroll Reports',
+            'payrolls' => $payrolls
+        ]);
+    }
+
+    public function payrollConfiguration(): void
+    {
+        $this->requireCompanyModule('payroll');
+        $config = $this->payrollModel->getPayrollConfiguration() ?? [];
+        $this->view('management/payroll_configuration', [
+            'title' => 'Payroll Configuration',
+            'config' => $config
+        ]);
+    }
+
+    public function savePayrollConfiguration(): void
+    {
+        $this->requireCompanyModule('payroll');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $_SESSION['payroll_flash'] = 'Invalid request method.';
+            $this->redirect('/management/payroll-configuration');
+        }
+
+        try {
+            $this->payrollModel->savePayrollConfiguration($_POST);
+            $_SESSION['payroll_flash'] = 'Payroll configuration saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['payroll_flash'] = 'Error saving configuration: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/payroll-configuration');
+    }
+
+    // ========== PAYSLIP METHODS ==========
+
+    public function generatePayslips(): void
+    {
+        $this->requireCompanyModule('payroll');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $_SESSION['payroll_flash'] = 'Invalid request method.';
+            $this->redirect('/management/payroll-reports');
+        }
+
+        try {
+            $payrollIds = (array)($_POST['payroll_ids'] ?? []);
+            $generated = 0;
+            $failed = 0;
+
+            foreach ($payrollIds as $payrollId) {
+                try {
+                    $this->payrollModel->generatePayslip((int)$payrollId);
+                    $generated++;
+                } catch (Throwable $e) {
+                    $failed++;
+                }
+            }
+
+            $_SESSION['payroll_flash'] = "Payslips generated: $generated successful, $failed failed.";
+        } catch (Throwable $exception) {
+            $_SESSION['payroll_flash'] = 'Error generating payslips: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/payroll-reports');
+    }
+
+    public function viewPayslip(): void
+    {
+        $this->requireCompanyModule('payroll');
+        $payslipId = (int)($_GET['id'] ?? 0);
+        $payslip = $this->payrollModel->getPayslip($payslipId);
+
+        if (!$payslip) {
+            $_SESSION['payroll_flash'] = 'Payslip not found.';
+            $this->redirect('/management/payroll-reports');
+        }
+
+        $this->view('management/payslip_detail', [
+            'title' => 'Payslip',
+            'payslip' => $payslip
+        ]);
+    }
+
+    public function downloadPayslipPDF(): void
+    {
+        $this->requireCompanyModule('payroll');
+        $payslipId = (int)($_GET['id'] ?? 0);
+        
+        try {
+            $html = $this->payrollModel->generatePayslipHTML($payslipId);
+            
+            header('Content-Type: text/html; charset=utf-8');
+            header('Content-Disposition: inline; filename="payslip_' . $payslipId . '.html"');
+            echo $html;
+            exit;
+        } catch (Throwable $exception) {
+            $_SESSION['payroll_flash'] = 'Error generating payslip: ' . $exception->getMessage();
+            $this->redirect('/management/payroll-reports');
+        }
     }
 }

@@ -76,6 +76,42 @@ class CompanyController extends BaseController
         }
     }
 
+    public function createCustomModule(): void
+    {
+        $this->requireSuperAdmin();
+        $companyId = (int)($_POST['company_id'] ?? 0);
+        $moduleName = trim((string)($_POST['module_name'] ?? ''));
+        $description = trim((string)($_POST['module_description'] ?? ''));
+
+        try {
+            $customModule = $this->companyModel->createCustomModule($companyId, $moduleName, $description !== '' ? $description : null);
+            $this->companyModel->saveModuleAccess($companyId, array_merge($this->companyModel->getModuleAccess($companyId), [$customModule['key']]));
+            $_SESSION['selected_company_id'] = $companyId;
+            $_SESSION['company_flash'] = 'Custom module "' . $customModule['name'] . '" was created successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['company_flash'] = 'Unable to create module: ' . $exception->getMessage();
+        }
+
+        $this->redirect('/company/workspace');
+    }
+
+    public function deleteCustomModule(): void
+    {
+        $this->requireSuperAdmin();
+        $companyId = (int)($_POST['company_id'] ?? 0);
+        $moduleKey = trim((string)($_POST['module_key'] ?? ''));
+
+        try {
+            $this->companyModel->deleteCustomModule($companyId, $moduleKey);
+            $_SESSION['selected_company_id'] = $companyId;
+            $_SESSION['company_flash'] = 'Custom module removed successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['company_flash'] = 'Unable to remove module: ' . $exception->getMessage();
+        }
+
+        $this->redirect('/company/workspace');
+    }
+
     private function setWorkspaceError(string $error): void
     {
         $this->view('company/workspace', [
