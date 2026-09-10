@@ -286,11 +286,7 @@ class UserModel extends Model
                 $name = 'Employee ' . ($employee['id'] ?? '');
             }
 
-            $roleName = trim((string)($employee['role_name'] ?? 'Staff')) ?: 'Staff';
-            $roleId = $roleModel->getRoleIdByName($roleName);
-            if ($roleId === null) {
-                $roleId = $roleModel->createRoleIfMissing($roleName, $roleName . ' role');
-            }
+            $roleId = $this->resolveEmployeeRoleId($employee, $roleModel);
 
             $password = substr(bin2hex(random_bytes(6)), 0, 12) . 'A1!';
 
@@ -306,6 +302,52 @@ class UserModel extends Model
         }
 
         return $created;
+    }
+
+    public function resolveEmployeeRoleId(array $employee, ?RoleModel $roleModel = null): int
+    {
+        $roleModel = $roleModel ?? new RoleModel();
+        $roles = $roleModel->getRoles();
+        $roleNames = [];
+        foreach (RoleModel::defaultRoleNames() as $roleName) {
+            $roleId = $roleModel->getRoleIdByName($roleName);
+            if ($roleId !== null) {
+                $roleNames[strtolower($roleName)] = ['id' => $roleId, 'name' => $roleName];
+            }
+        }
+        foreach ($roles as $role) {
+            $name = trim((string)($role['name'] ?? ''));
+            if ($name !== '') {
+                $roleNames[strtolower($name)] = ['id' => (int)$role['id'], 'name' => $name];
+            }
+        }
+
+        $fields = [
+            trim((string)($employee['designation'] ?? '')),
+            trim((string)($employee['position'] ?? '')),
+        ];
+        foreach ($fields as $field) {
+            $key = strtolower($field);
+            if ($key !== '' && isset($roleNames[$key])) {
+                return $roleNames[$key]['id'];
+            }
+        }
+
+        foreach ($fields as $field) {
+            $normalizedField = strtolower($field);
+            if ($normalizedField === '') {
+                continue;
+            }
+            foreach ($roleNames as $role) {
+                $normalizedRole = strtolower($role['name']);
+                if (strpos($normalizedField, $normalizedRole) !== false || strpos($normalizedRole, $normalizedField) !== false) {
+                    return $role['id'];
+                }
+            }
+        }
+
+        $staffRoleId = $roleModel->getRoleIdByName('Staff');
+        return $staffRoleId ?? $roleModel->createRoleIfMissing('Staff', 'Standard staff account');
     }
 
     public function syncEmployeeProfile(array $user): array

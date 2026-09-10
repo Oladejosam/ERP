@@ -56,6 +56,7 @@ class CompanyModel extends Model
             )'
         );
         $this->query("INSERT IGNORE INTO company_modules (company_id, module_key) SELECT id, 'requisition' FROM companies WHERE is_active = 1");
+        $this->query("INSERT IGNORE INTO company_modules (company_id, module_key) SELECT id, 'chat' FROM companies WHERE is_active = 1");
         $this->query(
             'CREATE TABLE IF NOT EXISTS employee_module_access (
                 company_id INT NOT NULL,
@@ -156,6 +157,7 @@ class CompanyModel extends Model
             'projects' => 'Projects',
             'contract_admin' => 'Contract Admin',
             'reports' => 'Reports',
+            'chat' => 'Team Chat',
         ];
     }
 
@@ -290,6 +292,25 @@ class CompanyModel extends Model
             return (bool)$this->query('SELECT 1 FROM role_module_access WHERE company_id = ? AND role_id = ? AND module_key = ? LIMIT 1', [$companyId, $roleId, $moduleKey])->fetchColumn();
         }
         return $this->hasModuleAccess($moduleKey);
+    }
+
+    public function hasCurrentUserModuleAccess(string $moduleKey): bool
+    {
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+            return $this->hasModuleAccess($moduleKey);
+        }
+
+        $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        if ($employeeId <= 0) {
+            return false;
+        }
+
+        if (in_array($moduleKey, ['inventory', 'requisition', 'procurement'], true) && $this->isStoreDepartmentEmployee($employeeId)) {
+            return $this->hasModuleAccess($moduleKey);
+        }
+
+        return $this->hasEmployeeModuleAccess($employeeId, $moduleKey);
     }
 
     public function hasRoleModuleAccess(int $roleId, string $moduleKey): bool

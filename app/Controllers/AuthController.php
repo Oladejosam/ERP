@@ -9,6 +9,7 @@ require_once APP_ROOT . '/core/Auth.php';
 require_once APP_ROOT . '/app/Models/UserModel.php';
 require_once APP_ROOT . '/app/Models/RoleModel.php';
 require_once APP_ROOT . '/app/Models/CompanyModel.php';
+require_once APP_ROOT . '/app/Models/ChatModel.php';
 
 class AuthController extends Controller
 {
@@ -77,6 +78,10 @@ class AuthController extends Controller
                     }
                     if ($user) {
                         $_SESSION['user'] = $user;
+                        $unreadChatCount = (new ChatModel())->getUnreadCount((int)$user['id']);
+                        if ($unreadChatCount > 0) {
+                            $_SESSION['chat_login_notification'] = $unreadChatCount;
+                        }
                         $roleName = strtolower((string)($user['role_name'] ?? ''));
                         if ($remember) {
                             setcookie('remember_email', $email, time() + 60 * 60 * 24 * 30, '/');
@@ -153,6 +158,10 @@ class AuthController extends Controller
                 if ($user && in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
                     $_SESSION['selected_company_id'] = $companyId;
                     $_SESSION['user'] = $user;
+                    $unreadChatCount = (new ChatModel())->getUnreadCount((int)$user['id']);
+                    if ($unreadChatCount > 0) {
+                        $_SESSION['chat_login_notification'] = $unreadChatCount;
+                    }
                     $this->redirect('/company/workspace');
                 }
                 $error = 'Invalid Super Admin credentials.';

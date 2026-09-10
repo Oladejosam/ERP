@@ -9,6 +9,25 @@
         </div>
     </div>
 
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-body d-flex flex-column flex-md-row justify-content-between gap-3">
+                <div>
+                    <div class="text-muted small">Signed in as</div>
+                    <h4 class="fw-bold mb-1"><?php echo htmlspecialchars($currentUserName ?? 'User'); ?></h4>
+                </div>
+                <div>
+                    <div class="text-muted small">Role</div>
+                    <div class="fw-semibold"><?php echo htmlspecialchars($currentUserRole ?? 'User'); ?></div>
+                </div>
+                <div>
+                    <div class="text-muted small">Designation</div>
+                    <div class="fw-semibold"><?php echo htmlspecialchars($currentUserDesignation ?? 'Not specified'); ?></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="col-md-3">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-body">

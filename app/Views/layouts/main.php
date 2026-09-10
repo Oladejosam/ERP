@@ -1,8 +1,10 @@
 ﻿<?php
 require_once APP_ROOT . '/app/Models/CompanyModel.php';
+require_once APP_ROOT . '/app/Models/ChatModel.php';
 $companySettings = (new CompanyModel())->getSettings();
 $availableCompanies = (new CompanyModel())->getCompanies();
 $companyModel = new CompanyModel();
+$chatUnreadCount = !empty($_SESSION['user']['id']) ? (new ChatModel())->getUnreadCount((int)$_SESSION['user']['id']) : 0;
 $companyName = trim((string)($companySettings['company_name'] ?? '')) ?: APP_NAME;
 $companyLogo = trim((string)($companySettings['logo_path'] ?? ''));
 $companyThemeColor = preg_match('/^#[0-9a-fA-F]{6}$/', (string)($companySettings['theme_color'] ?? ''))
@@ -88,6 +90,7 @@ function isActiveNav(string $href, string $currentPath): bool {
                 </form>
             <?php endif; ?>
             <span class="badge bg-success-subtle text-success px-2 py-2"><?php echo htmlspecialchars($roleName !== '' ? $roleName : 'User'); ?></span>
+            <?php if ($chatUnreadCount > 0): ?><a class="text-white text-decoration-none position-relative" href="/ERP/public/modules/chat" title="Unread chat messages"><i class="bi bi-chat-dots fs-5"></i><span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"><?php echo $chatUnreadCount > 99 ? '99+' : $chatUnreadCount; ?></span><span class="visually-hidden">Unread chat messages</span></a><?php endif; ?>
             <div class="d-flex align-items-center gap-2">
                 <i class="bi bi-person-circle fs-4"></i>
                 <div>
@@ -97,6 +100,15 @@ function isActiveNav(string $href, string $currentPath): bool {
             </div>
         </div>
     </nav>
+
+    <?php if (!empty($_SESSION['chat_login_notification'])): ?>
+        <div class="alert alert-info alert-dismissible fade show m-3 mb-0" role="alert">
+            <i class="bi bi-chat-dots me-2"></i>You have <?php echo (int)$_SESSION['chat_login_notification']; ?> new chat message<?php echo (int)$_SESSION['chat_login_notification'] === 1 ? '' : 's'; ?>.
+            <a class="alert-link ms-1" href="/ERP/public/modules/chat">Open Team Chat</a>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        <?php unset($_SESSION['chat_login_notification']); ?>
+    <?php endif; ?>
 
     <div class="row g-0">
         <aside class="sidebar-column col-lg-2 p-3" id="mainMenu">
@@ -110,17 +122,18 @@ function isActiveNav(string $href, string $currentPath): bool {
                     </div>
                     <ul class="nav flex-column gap-1">
                         <li><a class="nav-link<?php echo isActiveNav('/ERP/public/', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>
-                        <?php if ($companyModel->hasModuleAccess('inventory')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/inventory', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/inventory"><i class="bi bi-box-seam me-2"></i>Inventory</a></li><?php endif; ?>
-                        <?php if ($companyModel->hasModuleAccess('accounting')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/accounting', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/accounting"><i class="bi bi-cash-stack me-2"></i>Accounting</a></li><?php endif; ?>
-                        <?php if ($companyModel->hasModuleAccess('employees')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/employees', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/employees"><i class="bi bi-people me-2"></i>Employees</a></li><?php endif; ?>
-                        <?php if ($companyModel->hasModuleAccess('employees')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/module-access', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/module-access"><i class="bi bi-person-lock me-2"></i>Role Module Access</a></li><?php endif; ?>
-                        <?php if ($companyModel->hasModuleAccess('hr')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/hr', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/hr"><i class="bi bi-person-badge me-2"></i>HR</a></li><?php endif; ?>
-                        <?php if ($companyModel->hasModuleAccess('procurement')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/procurement', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/procurement"><i class="bi bi-cart3 me-2"></i>Procurement</a></li><?php endif; ?>
-                        <?php if ($companyModel->hasModuleAccess('requisition')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/requisition', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/requisition"><i class="bi bi-file-earmark-text me-2"></i>Requisition</a></li><?php endif; ?>
-                        <?php if ($companyModel->hasModuleAccess('projects')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/projects', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/projects"><i class="bi bi-kanban me-2"></i>Project</a></li><?php endif; ?>
-                        <?php if ($companyModel->hasModuleAccess('contract_admin')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/contract-admin', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/contract-admin"><i class="bi bi-file-earmark-check me-2"></i>Contract Admin</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasCurrentUserModuleAccess('inventory')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/inventory', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/inventory"><i class="bi bi-box-seam me-2"></i>Inventory</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasCurrentUserModuleAccess('accounting')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/accounting', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/accounting"><i class="bi bi-cash-stack me-2"></i>Accounting</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasCurrentUserModuleAccess('employees')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/employees', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/employees"><i class="bi bi-people me-2"></i>Employees</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasCurrentUserModuleAccess('employees')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/module-access', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/module-access"><i class="bi bi-person-lock me-2"></i>Role Module Access</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasCurrentUserModuleAccess('hr')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/hr', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/hr"><i class="bi bi-person-badge me-2"></i>HR</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasCurrentUserModuleAccess('procurement')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/management/procurement', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/management/procurement"><i class="bi bi-cart3 me-2"></i>Procurement</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasCurrentUserModuleAccess('requisition')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/requisition', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/requisition"><i class="bi bi-file-earmark-text me-2"></i>Requisition</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasCurrentUserModuleAccess('projects')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/projects', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/projects"><i class="bi bi-kanban me-2"></i>Project</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasCurrentUserModuleAccess('contract_admin')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/contract-admin', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/contract-admin"><i class="bi bi-file-earmark-check me-2"></i>Contract Admin</a></li><?php endif; ?>
+                        <?php if ($companyModel->hasCurrentUserModuleAccess('chat')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/chat', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/chat"><i class="bi bi-chat-dots me-2"></i>Team Chat</a></li><?php endif; ?>
                         <?php foreach ($companyModel->getCustomModulesForCompany((int)($_SESSION['selected_company_id'] ?? 1)) as $customModule): ?>
-                            <?php $customKey = (string)$customModule['module_key']; if (!$companyModel->hasModuleAccess($customKey)) { continue; } ?>
+                            <?php $customKey = (string)$customModule['module_key']; if (!$companyModel->hasCurrentUserModuleAccess($customKey)) { continue; } ?>
                             <li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/custom', $currentPath) && (string)($_GET['module'] ?? '') === $customKey ? ' active' : ''; ?>" href="/ERP/public/modules/custom?module=<?php echo urlencode($customKey); ?>"><i class="bi bi-puzzle me-2"></i><?php echo htmlspecialchars((string)$customModule['module_name']); ?></a></li>
                         <?php endforeach; ?>
                         <?php if ($isSuperAdmin): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/company/workspace', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/company/workspace"><i class="bi bi-buildings me-2"></i>Company Workspace</a></li><?php endif; ?>

@@ -902,8 +902,10 @@ class ManagementController extends BaseController
                 ]);
 
                 if ($this->userModel->getUserByEmail($email) === null) {
-                    $roleName = $value('role') !== '' ? $value('role') : 'Staff';
-                    $roleId = $this->roleModel->createRoleIfMissing($roleName, $roleName . ' access role');
+                    $roleId = $this->userModel->resolveEmployeeRoleId([
+                        'designation' => $value('designation'),
+                        'position' => $value('position'),
+                    ], $this->roleModel);
                     $this->userModel->createUser([
                         'name' => trim($value('first_name') . ' ' . $value('last_name')),
                         'email' => $email,

@@ -64,21 +64,18 @@ class BaseController extends Controller
             $this->redirect('/');
         }
 
+        $hasEmployeeAccess = false;
+        foreach (array_unique($moduleAliases) as $alias) {
+            if ($companyModel->hasCurrentUserModuleAccess($alias)) {
+                $hasEmployeeAccess = true;
+                break;
+            }
+        }
         $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
-        if (!in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
-            $employeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
-            $storeAccess = in_array($moduleKey, ['inventory', 'requisition', 'procurement'], true) && $companyModel->isStoreDepartmentEmployee($employeeId);
-            $hasEmployeeAccess = false;
-            foreach (array_unique($moduleAliases) as $alias) {
-                if ($employeeId > 0 && $companyModel->hasEmployeeModuleAccess($employeeId, $alias)) {
-                    $hasEmployeeAccess = true;
-                    break;
-                }
-            }
-            if ($employeeId > 0 && !$storeAccess && !$hasEmployeeAccess) {
-                $_SESSION['company_flash'] = 'This module is not enabled for your staff account.';
-                $this->redirect('/');
-            }
+        $isSuperAdmin = in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true);
+        if (!$isSuperAdmin && !$hasEmployeeAccess) {
+            $_SESSION['company_flash'] = 'This module is not enabled for your staff account.';
+            $this->redirect('/');
         }
     }
 }

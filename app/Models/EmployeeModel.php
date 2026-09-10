@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once APP_ROOT . '/core/Model.php';
+require_once APP_ROOT . '/app/Models/ChatModel.php';
 
 class EmployeeModel extends Model
 {
@@ -162,6 +163,7 @@ class EmployeeModel extends Model
         foreach ($roleIds as $roleId) {
             $this->query('INSERT INTO department_roles (department_id, company_id, role_id) VALUES (?, ?, ?)', [$departmentId, $companyId, $roleId]);
         }
+        (new ChatModel())->ensureDepartmentGroup($departmentId, $name);
     }
 
     public function updateDepartmentAssignments(int $departmentId, array $roleIds, ?int $headRoleId, ?int $headEmployeeId, ?string $headTitle): void
@@ -215,6 +217,7 @@ class EmployeeModel extends Model
         $companyId = $this->currentCompanyId();
         $this->db->beginTransaction();
         try {
+            (new ChatModel())->deleteDepartmentGroup($departmentId);
             $this->query('UPDATE employees SET department = "" WHERE company_id = ? AND department = ?', [$companyId, $department['name']]);
             $this->query('DELETE FROM departments WHERE id = ? AND company_id = ?', [$departmentId, $companyId]);
             $this->query('DELETE FROM department_roles WHERE department_id = ? AND company_id = ?', [$departmentId, $companyId]);

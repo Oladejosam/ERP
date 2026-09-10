@@ -12,6 +12,7 @@ require_once APP_ROOT . '/app/Models/EmployeeModel.php';
 require_once APP_ROOT . '/app/Models/WorkflowModel.php';
 require_once APP_ROOT . '/app/Models/ContractAdminModel.php';
 require_once APP_ROOT . '/app/Models/RequisitionModel.php';
+require_once APP_ROOT . '/app/Models/ChatModel.php';
 
 class ModuleController extends BaseController
 {
@@ -22,6 +23,7 @@ class ModuleController extends BaseController
     private WorkflowModel $workflowModel;
     private ContractAdminModel $contractAdminModel;
     private RequisitionModel $requisitionModel;
+    private ChatModel $chatModel;
 
     public function __construct()
     {
@@ -32,6 +34,7 @@ class ModuleController extends BaseController
         $this->workflowModel = new WorkflowModel();
         $this->contractAdminModel = new ContractAdminModel();
         $this->requisitionModel = new RequisitionModel();
+        $this->chatModel = new ChatModel();
     }
 
     public function requisitionForm(): void
@@ -94,6 +97,11 @@ class ModuleController extends BaseController
 
         if ($moduleKey === '' || !$companyModel->hasModuleAccess($moduleKey)) {
             $_SESSION['company_flash'] = 'This module is not enabled for the selected company.';
+            $this->redirect('/');
+        }
+
+        if (!$companyModel->hasCurrentUserModuleAccess($moduleKey)) {
+            $_SESSION['company_flash'] = 'This module is not enabled for your staff account.';
             $this->redirect('/');
         }
 
@@ -693,5 +701,225 @@ class ModuleController extends BaseController
         header('Content-Length: ' . (string)filesize($templatePath));
         readfile($templatePath);
         exit;
+    }
+
+    public function chat(): void
+    {
+        $this->requireCompanyModule('chat');
+        $currentUserId = (int)($_SESSION['user']['id'] ?? 0);
+        $colleagues = $this->chatModel->getColleaguesWithHistory($currentUserId);
+        $groups = $this->chatModel->getGroupsForUser($currentUserId);
+        $conversations = [];
+        foreach ($groups as $group) {
+            $conversations[] = [
+                'type' => 'group',
+                'id' => (int)$group['id'],
+                'latest' => (string)($group['last_message_at'] ?? ''),
+                'data' => $group,
+            ];
+        }
+        foreach ($colleagues as $colleague) {
+            $conversations[] = [
+                'type' => 'direct',
+                'id' => (int)$colleague['id'],
+                'latest' => (string)($colleague['last_message_at'] ?? ''),
+                'data' => $colleague,
+            ];
+        }
+        usort($conversations, static function (array $left, array $right): int {
+            $leftTime = $left['latest'] !== '' ? strtotime($left['latest']) : 0;
+            $rightTime = $right['latest'] !== '' ? strtotime($right['latest']) : 0;
+            return ($rightTime <=> $leftTime) ?: strcmp((string)($left['data']['group_name'] ?? $left['data']['name'] ?? ''), (string)($right['data']['group_name'] ?? $right['data']['name'] ?? ''));
+        });
+        $selectedColleagueId = (int)($_GET['with'] ?? 0);
+        $selectedColleague = $selectedColleagueId > 0 ? $this->chatModel->getColleague($currentUserId, $selectedColleagueId) : null;
+        if ($selectedColleague !== null) {
+            $this->chatModel->markConversationRead($currentUserId, $selectedColleagueId);
+        }
+        $selectedGroupId = (int)($_GET['group'] ?? 0);
+        $selectedGroup = $selectedGroupId > 0 ? $this->chatModel->getGroup($selectedGroupId, $currentUserId) : null;
+        if ($selectedGroup !== null) {
+            $this->chatModel->markGroupRead($selectedGroupId, $currentUserId);
+        }
+        $canManageSelectedGroup = $selectedGroup !== null && $this->chatModel->canManageGroup($selectedGroupId, $currentUserId);
+
+        $this->view('modules/chat', [
+            'title' => 'Team Chat',
+            'colleagues' => $colleagues,
+            'groups' => $groups,
+            'conversations' => $conversations,
+            'selectedColleague' => $selectedColleague,
+            'selectedGroup' => $selectedGroup,
+            'messages' => $selectedColleagueId > 0 ? $this->chatModel->getMessages($currentUserId, $selectedColleagueId) : [],
+            'groupMessages' => $selectedGroupId > 0 ? $this->chatModel->getGroupMessages($selectedGroupId, $currentUserId) : [],
+            'groupMembers' => $selectedGroupId > 0 ? $this->chatModel->getGroupMembers($selectedGroupId, $currentUserId) : [],
+            'availableGroupMembers' => $canManageSelectedGroup ? $this->chatModel->getAvailableGroupMembers($selectedGroupId, $currentUserId) : [],
+            'canManageSelectedGroup' => $canManageSelectedGroup,
+            'currentUserId' => $currentUserId,
+            'canCreateGroup' => $this->canCreateChatGroup(),
+        ]);
+    }
+
+    public function createChatGroup(): void
+    {
+        $this->requireCompanyModule('chat');
+        if (!$this->canCreateChatGroup()) {
+            $_SESSION['chat_flash'] = 'Only the Managing Director can create custom group chats.';
+            $this->redirect('/modules/chat');
+        }
+        try {
+            $groupId = $this->chatModel->createGroup((int)($_SESSION['user']['id'] ?? 0), (string)($_POST['group_name'] ?? ''));
+            $this->redirect('/modules/chat?group=' . $groupId);
+        } catch (Throwable $exception) {
+            $_SESSION['chat_flash'] = 'Unable to create group chat: ' . $exception->getMessage();
+            $this->redirect('/modules/chat');
+        }
+    }
+
+    public function addChatGroupMember(): void
+    {
+        $this->requireCompanyModule('chat');
+        $groupId = (int)($_POST['group_id'] ?? 0);
+        try {
+            $this->chatModel->addGroupMember($groupId, (int)($_POST['user_id'] ?? 0), (int)($_SESSION['user']['id'] ?? 0));
+        } catch (Throwable $exception) {
+            $_SESSION['chat_flash'] = 'Unable to add member: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/chat?group=' . $groupId);
+    }
+
+    public function removeChatGroupMember(): void
+    {
+        $this->requireCompanyModule('chat');
+        $groupId = (int)($_POST['group_id'] ?? 0);
+        try {
+            $this->chatModel->removeGroupMember($groupId, (int)($_POST['user_id'] ?? 0), (int)($_SESSION['user']['id'] ?? 0));
+        } catch (Throwable $exception) {
+            $_SESSION['chat_flash'] = 'Unable to remove member: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/chat?group=' . $groupId);
+    }
+
+    public function chatColleagues(): void
+    {
+        $this->requireCompanyModule('chat');
+        $currentUserId = (int)($_SESSION['user']['id'] ?? 0);
+        $this->json(['colleagues' => $this->chatModel->searchColleagues($currentUserId, (string)($_GET['search'] ?? ''))]);
+    }
+
+    public function chatMessages(): void
+    {
+        $this->requireCompanyModule('chat');
+        $currentUserId = (int)($_SESSION['user']['id'] ?? 0);
+        $groupId = (int)($_GET['group'] ?? 0);
+        if ($groupId > 0) {
+            $this->json(['messages' => $this->chatModel->getGroupMessages($groupId, $currentUserId, (int)($_GET['after'] ?? 0))]);
+        }
+        $colleagueId = (int)($_GET['with'] ?? 0);
+        if ($colleagueId <= 0 || $this->chatModel->getColleague($currentUserId, $colleagueId) === null) {
+            $this->json(['messages' => []]);
+        }
+
+        $this->json([
+            'messages' => $this->chatModel->getMessagesSince($currentUserId, $colleagueId, (int)($_GET['after'] ?? 0)),
+        ]);
+    }
+
+    public function sendChatMessage(): void
+    {
+        $this->requireCompanyModule('chat');
+        $recipientId = (int)($_POST['recipient_id'] ?? 0);
+        $groupId = (int)($_POST['group_id'] ?? 0);
+        $storedPath = null;
+        try {
+            [$attachment, $storedPath] = $this->prepareChatAttachment();
+            if ($groupId > 0) {
+                $this->chatModel->sendGroupMessage((int)($_SESSION['user']['id'] ?? 0), $groupId, (string)($_POST['message'] ?? ''), $attachment);
+            } else {
+                $this->chatModel->sendMessage((int)($_SESSION['user']['id'] ?? 0), $recipientId, (string)($_POST['message'] ?? ''), $attachment);
+            }
+        } catch (Throwable $exception) {
+            if ($storedPath !== null && is_file($storedPath)) {
+                @unlink($storedPath);
+            }
+            $_SESSION['chat_flash'] = 'Unable to send message: ' . $exception->getMessage();
+        }
+        $this->redirect($groupId > 0 ? '/modules/chat?group=' . $groupId : '/modules/chat?with=' . $recipientId);
+    }
+
+    public function chatAttachmentDownload(): void
+    {
+        $this->requireCompanyModule('chat');
+        $file = $this->chatModel->getAttachment((int)($_GET['id'] ?? 0), (int)($_SESSION['user']['id'] ?? 0));
+        if (!$file) {
+            http_response_code(404);
+            echo 'Chat file not found.';
+            return;
+        }
+        $path = APP_ROOT . '/public/uploads/chat/' . (int)$file['company_id'] . '/' . basename((string)$file['stored_name']);
+        if (!is_file($path)) {
+            http_response_code(404);
+            echo 'Chat file not found.';
+            return;
+        }
+        header('Content-Type: ' . (string)$file['file_type']);
+        $disposition = strpos((string)$file['file_type'], 'audio/') === 0 ? 'inline' : 'attachment';
+        header('Content-Disposition: ' . $disposition . '; filename="' . str_replace('"', '', basename((string)$file['original_name'])) . '"');
+        header('Content-Length: ' . (string)filesize($path));
+        readfile($path);
+        exit;
+    }
+
+    private function prepareChatAttachment(): array
+    {
+        $file = $_FILES['chat_file'] ?? null;
+        if (!$file || ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            return [null, null];
+        }
+        if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK || ($file['size'] ?? 0) > 10 * 1024 * 1024) {
+            throw new RuntimeException('Chat files must be 10 MB or smaller.');
+        }
+        $allowedTypes = [
+            'application/pdf', 'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'text/plain',
+            'application/zip', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/x-wav',
+            'video/webm', 'application/ogg', 'video/mp4',
+        ];
+        $allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'zip', 'doc', 'docx', 'xls', 'xlsx', 'webm', 'ogg', 'm4a', 'mp3', 'wav'];
+        $originalName = basename((string)($file['name'] ?? ''));
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        $mimeType = (new finfo(FILEINFO_MIME_TYPE))->file((string)$file['tmp_name']);
+        if (!in_array($extension, $allowedExtensions, true) || !in_array($mimeType, $allowedTypes, true)) {
+            throw new RuntimeException('Chat files must be PDF, image, Word, Excel, ZIP, text, or audio files.');
+        }
+        if ($extension === 'webm' && $mimeType === 'video/webm') {
+            $mimeType = 'audio/webm';
+        } elseif ($extension === 'ogg' && $mimeType === 'application/ogg') {
+            $mimeType = 'audio/ogg';
+        } elseif ($extension === 'm4a' && $mimeType === 'video/mp4') {
+            $mimeType = 'audio/mp4';
+        }
+        $uploadDirectory = APP_ROOT . '/public/uploads/chat/' . (int)($_SESSION['selected_company_id'] ?? 1);
+        if (!is_dir($uploadDirectory) && !mkdir($uploadDirectory, 0775, true) && !is_dir($uploadDirectory)) {
+            throw new RuntimeException('The chat file directory could not be created.');
+        }
+        $storedName = bin2hex(random_bytes(16)) . '.' . $extension;
+        $storedPath = $uploadDirectory . '/' . $storedName;
+        if (!move_uploaded_file((string)$file['tmp_name'], $storedPath)) {
+            throw new RuntimeException('The chat file could not be saved.');
+        }
+        return [[
+            'original_name' => $originalName,
+            'stored_name' => $storedName,
+            'file_type' => (string)$mimeType,
+            'file_size' => (int)$file['size'],
+        ], $storedPath];
+    }
+
+    private function canCreateChatGroup(): bool
+    {
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        return in_array($roleName, ['managing director', 'managing_director', 'super admin', 'superadministrator', 'super administrator'], true);
     }
 }

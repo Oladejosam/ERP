@@ -8,6 +8,7 @@ require_once APP_ROOT . '/app/Controllers/BaseController.php';
 require_once APP_ROOT . '/app/Models/CompanyModel.php';
 require_once APP_ROOT . '/app/Models/RequisitionModel.php';
 require_once APP_ROOT . '/app/Models/ProjectModel.php';
+require_once APP_ROOT . '/app/Models/EmployeeModel.php';
 
 class HomeController extends BaseController
 {
@@ -19,6 +20,8 @@ class HomeController extends BaseController
         }
 
         $this->requireAccess();
+        $currentUser = $this->currentUser() ?? [];
+        $employee = (new EmployeeModel())->getEmployeeById((int)($currentUser['employee_id'] ?? 0));
         $projectModel = new ProjectModel();
         if ($projectModel->getQuantitySurveyorProjects((int)($_SESSION['user']['employee_id'] ?? 0)) !== []) {
             $this->redirect('/portal/site-quantity-surveyor');
@@ -50,6 +53,11 @@ class HomeController extends BaseController
         $this->view('dashboard/index', [
             'title' => 'Dashboard',
             'companyName' => (string)($companySettings['company_name'] ?? ''),
+            'currentUserName' => (string)($currentUser['name'] ?? 'User'),
+            'currentUserRole' => (string)($currentUser['role_name'] ?? 'User'),
+            'currentUserDesignation' => trim((string)($employee['designation'] ?? '')) !== ''
+                ? (string)$employee['designation']
+                : (string)($employee['position'] ?? 'Not specified'),
             'employees' => $employees,
             'inventory_items' => $inventoryItems,
             'revenue' => $invoiceTotal,
