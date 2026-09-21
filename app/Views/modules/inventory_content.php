@@ -80,19 +80,20 @@
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">Item Code</label>
-                            <input class="form-control" name="item_code" required>
+                            <input class="form-control" name="item_code" id="inventoryItemCode" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Item Name</label>
-                            <input class="form-control" name="name" required>
+                            <input class="form-control" name="name" id="inventoryItemName" list="inventoryItemNames" autocomplete="off" required>
+                            <datalist id="inventoryItemNames"></datalist>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Category</label>
-                            <input class="form-control" name="category" placeholder="e.g. Steel">
+                            <input class="form-control" name="category" id="inventoryItemCategory" placeholder="e.g. Steel">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Unit</label>
-                            <input class="form-control" name="unit" value="pcs">
+                            <input class="form-control" name="unit" id="inventoryItemUnit" value="pcs">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Supplier Name</label>
@@ -111,24 +112,12 @@
                             <input class="form-control" name="supplier_address">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Cost Price</label>
-                            <input type="number" step="0.01" class="form-control" name="cost_price" value="0">
+                            <label class="form-label">Price</label>
+                            <input type="number" step="0.01" min="0" class="form-control" name="price" id="inventoryItemPrice" value="0">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Selling Price</label>
-                            <input type="number" step="0.01" class="form-control" name="selling_price" value="0">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Opening Stock</label>
-                            <input type="number" class="form-control" name="opening_stock" value="0">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Current Stock</label>
-                            <input type="number" class="form-control" name="current_stock" value="0">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Reorder Level</label>
-                            <input type="number" class="form-control" name="reorder_level" value="0">
+                            <label class="form-label">Stock</label>
+                            <input type="number" min="0" class="form-control" name="stock" id="inventoryItemStock" value="0" required>
                         </div>
                     </div>
                     <div class="mt-4 d-flex justify-content-end">
@@ -141,3 +130,35 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const nameInput = document.getElementById('inventoryItemName');
+    const suggestions = document.getElementById('inventoryItemNames');
+    const codeInput = document.getElementById('inventoryItemCode');
+    const categoryInput = document.getElementById('inventoryItemCategory');
+    const unitInput = document.getElementById('inventoryItemUnit');
+    const priceInput = document.getElementById('inventoryItemPrice');
+    if (!nameInput || !suggestions) return;
+    let matches = [];
+    nameInput.addEventListener('input', function () {
+        const query = nameInput.value.trim();
+        if (query.length < 2) return;
+        fetch('/ERP/public/inventory/search?q=' + encodeURIComponent(query), {headers: {Accept: 'application/json'}})
+            .then(response => response.json())
+            .then(data => {
+                matches = data.items || [];
+                suggestions.innerHTML = matches.map(item => '<option value="' + String(item.name).replace(/"/g, '&quot;') + '">' + String(item.item_code).replace(/"/g, '&quot;') + '</option>').join('');
+                const existing = matches.find(item => item.name.toLowerCase() === query.toLowerCase());
+                if (!existing) return;
+                codeInput.value = existing.item_code || '';
+                categoryInput.value = existing.category_name || '';
+                unitInput.value = existing.unit || 'pcs';
+                priceInput.value = existing.cost_price || existing.selling_price || 0;
+                codeInput.readOnly = true;
+                categoryInput.readOnly = true;
+                unitInput.readOnly = true;
+            })
+            .catch(() => {});
+    });
+});
+</script>

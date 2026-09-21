@@ -74,6 +74,35 @@ class RequisitionModel extends Model
             )'
         );
         $this->query(
+            'CREATE TABLE IF NOT EXISTS requisition_notifications (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                requisition_id INT NOT NULL,
+                company_id INT NOT NULL,
+                user_id INT NOT NULL,
+                message VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                read_at DATETIME NULL,
+                UNIQUE KEY unique_requisition_notification (requisition_id, user_id, message),
+                INDEX idx_requisition_notifications_user (company_id, user_id, read_at)
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS requisition_handoffs (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                requisition_id INT NOT NULL,
+                company_id INT NOT NULL,
+                forwarded_by INT NOT NULL,
+                forwarded_to INT NOT NULL,
+                note VARCHAR(500) NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_requisition_handoffs_requisition (requisition_id, created_at)
+            )'
+        );
+        $this->query('ALTER TABLE requisition_handoffs ADD COLUMN IF NOT EXISTS decision ENUM("pending", "approved", "flagged") NOT NULL DEFAULT "pending"');
+        $this->query('ALTER TABLE requisition_handoffs ADD COLUMN IF NOT EXISTS decision_reason VARCHAR(500) NULL');
+        $this->query('ALTER TABLE requisition_handoffs ADD COLUMN IF NOT EXISTS decided_by INT NULL');
+        $this->query('ALTER TABLE requisition_handoffs ADD COLUMN IF NOT EXISTS decided_at DATETIME NULL');
+        $this->query(
             'CREATE TABLE IF NOT EXISTS requisition_messages (
                 id INT PRIMARY KEY AUTO_INCREMENT,
                 requisition_id INT NOT NULL,
@@ -81,6 +110,16 @@ class RequisitionModel extends Model
                 user_id INT NOT NULL,
                 message TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS requisition_approvals (
+                requisition_id INT NOT NULL,
+                company_id INT NOT NULL,
+                user_id INT NOT NULL,
+                approved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (requisition_id, user_id),
+                INDEX idx_requisition_approvals_company (company_id)
             )'
         );
         $this->query(
@@ -113,6 +152,32 @@ class RequisitionModel extends Model
                 decided_at DATETIME NULL,
                 decided_by INT NULL,
                 UNIQUE KEY unique_dispatch_item (requisition_item_id)
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS delivery_notes (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                requisition_id INT NOT NULL,
+                dispatch_id INT NOT NULL,
+                note_number VARCHAR(50) NOT NULL,
+                issued_to VARCHAR(255) NULL,
+                issued_by INT NULL,
+                issued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_delivery_note_number (company_id, note_number),
+                FOREIGN KEY (requisition_id) REFERENCES requisitions(id),
+                FOREIGN KEY (dispatch_id) REFERENCES requisition_dispatch_requests(id)
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS delivery_note_items (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                delivery_note_id INT NOT NULL,
+                inventory_item_id INT NOT NULL,
+                item_name VARCHAR(255) NOT NULL,
+                quantity DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                stock_type VARCHAR(30) NOT NULL,
+                FOREIGN KEY (delivery_note_id) REFERENCES delivery_notes(id) ON DELETE CASCADE
             )'
         );
         $this->query(
@@ -315,6 +380,12 @@ class RequisitionModel extends Model
                     'INSERT IGNORE INTO requisition_participants (requisition_id, company_id, user_id) SELECT ?, ?, id FROM users WHERE id = ? AND (company_id = ? OR company_id IS NULL)',
                     [$requisitionId, $this->currentCompanyId(), $participantId, $this->currentCompanyId()]
                 );
+                if ($participantId !== (int)$requestedBy) {
+                    $this->query(
+                        'INSERT IGNORE INTO requisition_notifications (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)',
+                        [$requisitionId, $this->currentCompanyId(), $participantId, 'You were tagged to review and approve a requisition.']
+                    );
+                }
             }
             if ($requestedBy !== null) {
                 $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $this->currentCompanyId(), $requestedBy, 'Requisition discussion started.']);
@@ -333,12 +404,6 @@ class RequisitionModel extends Model
                     'INSERT INTO requisition_items (requisition_id, inventory_item_id, description, item_code, unit, quantity_required, quantity_in_stock, quantity_to_purchase, price, value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     [$requisitionId, $inventoryItem ? (int)$inventoryItem['id'] : null, trim((string)($item['description'] ?? '')) ?: ($itemName ?: null), $itemCode ?: null, trim((string)($item['unit'] ?? '')) ?: null, $quantityRequired, max(0, (float)($item['quantity_in_stock'] ?? 0)), $quantityToPurchase, $price, number_format($value, 2, '.', '')]
                 );
-                if ($inventoryItem && ($quantityRequired > 0 || $quantityToPurchase > 0)) {
-                    $this->query(
-                        'INSERT INTO requisition_dispatch_requests (requisition_id, requisition_item_id, company_id, inventory_item_id, quantity, urgent) VALUES (?, ?, ?, ?, ?, ?)',
-                        [$requisitionId, (int)$this->db->lastInsertId(), $this->currentCompanyId(), (int)$inventoryItem['id'], number_format($quantityRequired > 0 ? $quantityRequired : $quantityToPurchase, 2, '.', ''), !empty($data['urgent']) ? 1 : 0]
-                    );
-                }
             }
             $this->query('UPDATE requisitions SET amount = ?, value = ? WHERE id = ?', [number_format($total, 2, '.', ''), number_format($total, 2, '.', ''), $requisitionId]);
             $this->saveFormData($requisitionId, $data, $this->getFormFields());
@@ -366,7 +431,21 @@ class RequisitionModel extends Model
     public function getPendingDispatchRequests(): array
     {
         return $this->query(
-            'SELECT d.*, r.title, r.requisition_date, r.urgent AS requisition_urgent, ri.description, ri.item_code, ri.unit, u.name AS requester_name, i.current_stock, i.free_stock, i.allocated_stock FROM requisition_dispatch_requests d INNER JOIN requisitions r ON r.id = d.requisition_id AND r.company_id = d.company_id INNER JOIN requisition_items ri ON ri.id = d.requisition_item_id INNER JOIN users u ON u.id = r.requested_by INNER JOIN inventory_items i ON i.id = d.inventory_item_id AND i.company_id = d.company_id WHERE d.company_id = ? AND r.status = "approved" AND d.status = "pending" ORDER BY d.requested_at ASC, d.id ASC',
+            'SELECT d.*, r.title, r.requisition_date, r.urgent AS requisition_urgent, ri.description, ri.item_code, ri.unit, u.name AS requester_name, i.current_stock, i.free_stock, i.allocated_stock,
+                    latest_handoff.forwarded_to_name, latest_handoff.handoff_decision, latest_handoff.handoff_decision_reason
+             FROM requisition_dispatch_requests d
+             INNER JOIN requisitions r ON r.id = d.requisition_id AND r.company_id = d.company_id
+             INNER JOIN requisition_items ri ON ri.id = d.requisition_item_id
+             INNER JOIN users u ON u.id = r.requested_by
+             INNER JOIN inventory_items i ON i.id = d.inventory_item_id AND i.company_id = d.company_id
+             LEFT JOIN (
+                 SELECT h.requisition_id, recipient.name AS forwarded_to_name, h.decision AS handoff_decision, h.decision_reason AS handoff_decision_reason
+                 FROM requisition_handoffs h
+                 INNER JOIN users recipient ON recipient.id = h.forwarded_to
+                 INNER JOIN (SELECT company_id, requisition_id, MAX(id) AS latest_id FROM requisition_handoffs GROUP BY company_id, requisition_id) latest ON latest.company_id = h.company_id AND latest.latest_id = h.id
+             ) latest_handoff ON latest_handoff.requisition_id = r.id
+             WHERE d.company_id = ? AND r.status = "approved" AND d.status = "pending"
+             ORDER BY d.requested_at ASC, d.id ASC',
             [$this->currentCompanyId()]
         )->fetchAll();
     }
@@ -396,10 +475,14 @@ class RequisitionModel extends Model
         }
     }
 
-    public function decideDispatch(int $dispatchId, int $userId, string $stockType, bool $urgent): void
+    public function decideDispatch(int $dispatchId, int $userId, string $stockType, bool $urgent, string $issuedTo = ''): int
     {
         if (!in_array($stockType, ['free', 'allocated'], true)) {
             throw new InvalidArgumentException('Select whether the issue is from free or allocated stock.');
+        }
+        $issuedTo = trim($issuedTo);
+        if ($issuedTo === '') {
+            throw new InvalidArgumentException('Enter the person, project, or site receiving the item.');
         }
         $companyId = $this->currentCompanyId();
         $this->db->beginTransaction();
@@ -420,9 +503,14 @@ class RequisitionModel extends Model
             $this->query('UPDATE inventory_items SET ' . $stockType . '_stock = ' . $stockType . '_stock - ?, current_stock = free_stock + allocated_stock WHERE id = ? AND company_id = ?', [$quantity, (int)$dispatch['inventory_item_id'], $companyId]);
             $decision = $stockType === 'allocated' && $urgent ? 'purchase_required' : 'issued';
             $this->query('UPDATE requisition_dispatch_requests SET stock_type = ?, urgent = ?, decision = ?, status = "approved", decided_at = NOW(), decided_by = ? WHERE id = ? AND status = "pending"', [$stockType, $urgent ? 1 : 0, $decision, $userId, $dispatchId]);
+            $noteNumber = 'DN-' . date('YmdHis') . '-' . random_int(100, 999);
+            $this->query('INSERT INTO delivery_notes (company_id, requisition_id, dispatch_id, note_number, issued_to, issued_by) VALUES (?, ?, ?, ?, ?, ?)', [$companyId, (int)$dispatch['requisition_id'], $dispatchId, $noteNumber, $issuedTo, $userId ?: null]);
+            $deliveryNoteId = (int)$this->db->lastInsertId();
+            $this->query('INSERT INTO delivery_note_items (delivery_note_id, inventory_item_id, item_name, quantity, stock_type) VALUES (?, ?, ?, ?, ?)', [$deliveryNoteId, (int)$dispatch['inventory_item_id'], $inventory['name'], $quantity, $stockType]);
             $message = $decision === 'purchase_required' ? 'Allocated stock issued urgently for ' . $inventory['name'] . '; procurement action is required.' : 'Store issued ' . $quantity . ' unit(s) of ' . $inventory['name'] . ' from ' . $stockType . ' stock.';
             $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [(int)$dispatch['requisition_id'], $companyId, $userId, $message]);
             $this->db->commit();
+            return $deliveryNoteId;
         } catch (Throwable $exception) {
             if ($this->db->inTransaction()) {
                 $this->db->rollBack();
@@ -439,7 +527,7 @@ class RequisitionModel extends Model
         if (!$requisition) {
             return null;
         }
-        $items = $this->query('SELECT * FROM requisition_items WHERE requisition_id = ? ORDER BY id ASC', [$requisitionId])->fetchAll();
+        $items = $this->query('SELECT ri.*, i.current_stock AS live_current_stock FROM requisition_items ri INNER JOIN requisitions r ON r.id = ri.requisition_id AND r.company_id = ? LEFT JOIN inventory_items i ON i.id = ri.inventory_item_id AND i.company_id = r.company_id WHERE ri.requisition_id = ? ORDER BY ri.id ASC', [$this->currentCompanyId(), $requisitionId])->fetchAll();
         foreach ($items as $index => $item) {
             $items[$index]['adjustments'] = $this->query(
                 'SELECT a.*, u.name AS user_name FROM requisition_item_adjustments a INNER JOIN users u ON u.id = a.user_id WHERE a.requisition_id = ? AND a.requisition_item_id = ? AND a.company_id = ? ORDER BY a.changed_at DESC, a.id DESC',
@@ -447,10 +535,35 @@ class RequisitionModel extends Model
             )->fetchAll();
         }
         $requisition['items'] = $items;
+        $requisition['handoffs'] = $this->query(
+            'SELECT h.*, sender.name AS forwarded_by_name, recipient.name AS forwarded_to_name, decider.name AS decided_by_name
+             FROM requisition_handoffs h
+             INNER JOIN users sender ON sender.id = h.forwarded_by
+             INNER JOIN users recipient ON recipient.id = h.forwarded_to
+             LEFT JOIN users decider ON decider.id = h.decided_by
+             WHERE h.requisition_id = ? AND h.company_id = ?
+             ORDER BY h.created_at DESC, h.id DESC',
+            [$requisitionId, $this->currentCompanyId()]
+        )->fetchAll();
+        $requisition['latest_handoff'] = $requisition['handoffs'][0] ?? null;
         $requisition['form_data'] = $this->getFormData($requisitionId);
+        $requisition['approval_user_ids'] = array_map(
+            'intval',
+            $this->query('SELECT user_id FROM requisition_approvals WHERE requisition_id = ? AND company_id = ?', [$requisitionId, $this->currentCompanyId()])->fetchAll(PDO::FETCH_COLUMN)
+        );
         $requisition['participants'] = $this->query('SELECT u.id, u.name, u.email FROM requisition_participants p INNER JOIN users u ON u.id = p.user_id WHERE p.requisition_id = ? AND p.company_id = ? ORDER BY u.name ASC', [$requisitionId, $this->currentCompanyId()])->fetchAll();
         $requisition['messages'] = $this->query('SELECT m.*, u.name AS author_name FROM requisition_messages m INNER JOIN users u ON u.id = m.user_id WHERE m.requisition_id = ? AND m.company_id = ? ORDER BY m.created_at ASC, m.id ASC', [$requisitionId, $this->currentCompanyId()])->fetchAll();
         return $requisition;
+    }
+
+    public function getDeliveryNote(int $deliveryNoteId): ?array
+    {
+        $note = $this->query('SELECT dn.*, r.title, u.name AS issued_by_name FROM delivery_notes dn INNER JOIN requisitions r ON r.id = dn.requisition_id AND r.company_id = dn.company_id LEFT JOIN users u ON u.id = dn.issued_by WHERE dn.id = ? AND dn.company_id = ? LIMIT 1', [$deliveryNoteId, $this->currentCompanyId()])->fetch();
+        if (!$note) {
+            return null;
+        }
+        $note['items'] = $this->query('SELECT * FROM delivery_note_items WHERE delivery_note_id = ? ORDER BY id ASC', [$deliveryNoteId])->fetchAll();
+        return $note;
     }
 
     public function adjustItemQuantity(int $requisitionId, int $itemId, int $userId, float $delta, string $reason = ''): void
@@ -601,12 +714,28 @@ class RequisitionModel extends Model
         foreach ($logisticsUserIds as $row) {
             $logisticsUserId = (int)$row['id'];
             $this->query('INSERT IGNORE INTO requisition_participants (requisition_id, company_id, user_id) VALUES (?, ?, ?)', [$requisitionId, $companyId, $logisticsUserId]);
+            $this->query(
+                'INSERT IGNORE INTO requisition_notifications (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)',
+                [$requisitionId, $companyId, $logisticsUserId, 'All approvals are complete. This requisition is ready for you to forward.']
+            );
         }
 
         $this->query(
             'INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)',
-            [$requisitionId, $companyId, $approvedBy, 'Requisition approved by the top-level approver and sent to the Logistics Officer.']
+            [$requisitionId, $companyId, $approvedBy, 'All tagged approvers approved the requisition. It was sent to the Logistics Officer to determine who receives it.']
         );
+    }
+
+    public function getNotificationsForUser(int $userId): array
+    {
+        return $this->query(
+            'SELECT n.id AS notification_id, n.requisition_id AS id, r.title, n.message, n.created_at
+             FROM requisition_notifications n
+             INNER JOIN requisitions r ON r.id = n.requisition_id AND r.company_id = n.company_id
+             WHERE n.company_id = ? AND n.user_id = ? AND n.read_at IS NULL
+             ORDER BY n.created_at DESC, n.id DESC',
+            [$this->currentCompanyId(), $userId]
+        )->fetchAll();
     }
 
     public function decide(int $requisitionId, int $userId, string $decision): void
@@ -615,12 +744,15 @@ class RequisitionModel extends Model
             throw new InvalidArgumentException('Invalid requisition decision.');
         }
         $companyId = $this->currentCompanyId();
-        $requisition = $this->query('SELECT status FROM requisitions WHERE id = ? AND company_id = ? LIMIT 1', [$requisitionId, $companyId])->fetch();
-        if (!$requisition || $requisition['status'] !== 'pending') {
+        $requisition = $this->query('SELECT status, requested_by FROM requisitions WHERE id = ? AND company_id = ? LIMIT 1', [$requisitionId, $companyId])->fetch();
+        if (!$requisition || !in_array($requisition['status'], ['pending', 'approved'], true)) {
             throw new InvalidArgumentException('This requisition has already been treated.');
         }
         if (!$this->isParticipant($requisitionId, $userId)) {
             throw new InvalidArgumentException('Only tagged colleagues can decide on this requisition.');
+        }
+        if ($decision === 'approved' && (int)($requisition['requested_by'] ?? 0) === $userId) {
+            throw new InvalidArgumentException('The person who raised the requisition cannot approve it.');
         }
 
         if ($decision === 'rejected') {
@@ -629,33 +761,148 @@ class RequisitionModel extends Model
             return;
         }
 
-        $highestApproverId = $this->getHighestLevelTaggedApprover($requisitionId);
-        if ($highestApproverId === null || (int)$userId !== $highestApproverId) {
-            $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, 'Approved by this participant, but the requisition remains open pending the highest-level approver.']);
+        $approvalInsert = $this->query(
+            'INSERT IGNORE INTO requisition_approvals (requisition_id, company_id, user_id) VALUES (?, ?, ?)',
+            [$requisitionId, $companyId, $userId]
+        );
+        if ($approvalInsert->rowCount() === 0) {
+            throw new InvalidArgumentException('You can only approve this requisition once.');
+        }
+
+                $pendingApprover = $this->query(
+                        'SELECT p.user_id
+                         FROM requisition_participants p
+                         WHERE p.requisition_id = ?
+                             AND p.company_id = ?
+                             AND p.user_id <> ?
+                             AND NOT EXISTS (
+                                     SELECT 1 FROM requisition_approvals a
+                                     WHERE a.requisition_id = p.requisition_id
+                                         AND a.company_id = p.company_id
+                                         AND a.user_id = p.user_id
+                             )
+                         LIMIT 1',
+                        [$requisitionId, $companyId, (int)($requisition['requested_by'] ?? 0)]
+                )->fetchColumn();
+                if ($pendingApprover !== false) {
+            $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, 'Approved by this participant. The requisition remains open pending approval from the other tagged approvers.']);
             return;
         }
 
         $this->query('UPDATE requisitions SET status = "approved", chat_closed_at = NOW() WHERE id = ? AND company_id = ? AND status = "pending"', [$requisitionId, $companyId]);
         $this->sendToLogisticsOfficer($requisitionId, $userId);
-        $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, 'Requisition approved and the discussion is now closed.']);
+                $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, 'All tagged approvers approved the requisition. The discussion is now closed and it was sent to the Logistics Officer to determine who receives it.']);
     }
 
     public function handoff(int $requisitionId, int $userId, int $nextUserId, string $note = ''): void
     {
         $companyId = $this->currentCompanyId();
         $requisition = $this->query('SELECT status FROM requisitions WHERE id = ? AND company_id = ? LIMIT 1', [$requisitionId, $companyId])->fetch();
-        if (!$requisition || $requisition['status'] !== 'pending') {
+        if (!$requisition || !in_array($requisition['status'], ['pending', 'approved'], true)) {
             throw new InvalidArgumentException('This requisition is no longer open for handoff.');
         }
-        if (!$this->isParticipant($requisitionId, $userId)) {
-            throw new InvalidArgumentException('Only tagged colleagues can hand off this requisition.');
+        $isLogisticsOfficer = (bool)$this->query(
+            'SELECT 1 FROM users u INNER JOIN roles r ON r.id = u.role_id WHERE u.id = ? AND u.company_id = ? AND LOWER(r.name) LIKE ? LIMIT 1',
+            [$userId, $companyId, '%logistics%']
+        )->fetchColumn();
+        if (!$isLogisticsOfficer || $requisition['status'] !== 'approved') {
+            throw new InvalidArgumentException('Only a Logistics Officer can forward an approved requisition.');
         }
         if ($nextUserId <= 0 || !$this->query('SELECT id FROM users WHERE id = ? AND company_id = ? LIMIT 1', [$nextUserId, $companyId])->fetch()) {
             throw new InvalidArgumentException('Select a valid colleague from this company.');
         }
-        $this->query('INSERT IGNORE INTO requisition_participants (requisition_id, company_id, user_id) VALUES (?, ?, ?)', [$requisitionId, $companyId, $nextUserId]);
         $note = trim($note);
+        $this->query('INSERT IGNORE INTO requisition_participants (requisition_id, company_id, user_id) VALUES (?, ?, ?)', [$requisitionId, $companyId, $nextUserId]);
+        $this->query(
+            'INSERT INTO requisition_handoffs (requisition_id, company_id, forwarded_by, forwarded_to, note) VALUES (?, ?, ?, ?, ?)',
+            [$requisitionId, $companyId, $userId, $nextUserId, $note !== '' ? $note : null]
+        );
+        $this->query(
+            'INSERT IGNORE INTO requisition_notifications (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)',
+            [$requisitionId, $companyId, $nextUserId, 'A Logistics Officer forwarded a requisition to you.']
+        );
         $message = 'Requisition handed off to the next colleague.' . ($note !== '' ? ' Note: ' . $note : '');
+        $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, $message]);
+    }
+
+    public function reviewInventory(int $requisitionId, int $userId, array $items): void
+    {
+        $companyId = $this->currentCompanyId();
+        $this->db->beginTransaction();
+        try {
+            $handoff = $this->query(
+                'SELECT h.id FROM requisition_handoffs h INNER JOIN users u ON u.id = h.forwarded_to INNER JOIN roles r ON r.id = u.role_id WHERE h.requisition_id = ? AND h.company_id = ? AND h.forwarded_to = ? AND LOWER(r.name) IN ("head store keeper", "head store", "hod store", "hod of store", "head of store") ORDER BY h.id DESC LIMIT 1 FOR UPDATE',
+                [$requisitionId, $companyId, $userId]
+            )->fetch();
+            if (!$handoff) {
+                throw new InvalidArgumentException('Only the Head Store Keeper can complete this inventory review.');
+            }
+
+            $requisition = $this->query('SELECT urgent FROM requisitions WHERE id = ? AND company_id = ? AND status = "approved" LIMIT 1', [$requisitionId, $companyId])->fetch();
+            if (!$requisition) {
+                throw new InvalidArgumentException('This requisition is not ready for inventory review.');
+            }
+
+            foreach ($items as $itemId => $values) {
+                $itemId = (int)$itemId;
+                $item = $this->query('SELECT ri.*, i.id AS inventory_id, i.current_stock, i.free_stock, i.cost_price FROM requisition_items ri INNER JOIN inventory_items i ON i.id = ri.inventory_item_id AND i.company_id = ? WHERE ri.id = ? AND ri.requisition_id = ? FOR UPDATE', [$companyId, $itemId, $requisitionId])->fetch();
+                if (!$item) {
+                    continue;
+                }
+                $requested = max(0, (float)($item['quantity_required'] ?? 0));
+                $inStock = max(0, min((float)($values['quantity_in_stock'] ?? 0), (float)$item['current_stock']));
+                $toPurchase = max(0, $requested - $inStock);
+                $lastPurchasePrice = max(0, (float)($item['cost_price'] ?? 0));
+                $this->query('UPDATE requisition_items SET quantity_in_stock = ?, quantity_to_purchase = ?, price = ?, value = quantity_to_purchase * price WHERE id = ? AND requisition_id = ?', [$inStock, $toPurchase, $lastPurchasePrice, $itemId, $requisitionId]);
+                if ($inStock > 0) {
+                    $this->query('INSERT INTO requisition_dispatch_requests (requisition_id, requisition_item_id, company_id, inventory_item_id, quantity, urgent) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), status = "pending", decision = "pending", decided_at = NULL, decided_by = NULL', [$requisitionId, $itemId, $companyId, (int)$item['inventory_id'], $inStock, !empty($requisition['urgent']) ? 1 : 0]);
+                }
+            }
+            $this->query('UPDATE requisitions SET amount = (SELECT ROUND(SUM(value), 2) FROM requisition_items WHERE requisition_id = ?), value = amount WHERE id = ?', [$requisitionId, $requisitionId]);
+            $this->query('UPDATE requisition_handoffs SET decision = "approved", decided_by = ?, decided_at = NOW() WHERE id = ? AND decision = "pending"', [$userId, (int)$handoff['id']]);
+            $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, 'Head Store completed the inventory review. Available stock and purchase quantities were updated.']);
+            $this->db->commit();
+        } catch (Throwable $exception) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
+    public function decideHandoff(int $requisitionId, int $userId, string $decision, string $reason = ''): void
+    {
+        if (!in_array($decision, ['approved', 'flagged'], true)) {
+            throw new InvalidArgumentException('Invalid handoff decision.');
+        }
+        $reason = trim($reason);
+        if ($decision === 'flagged' && $reason === '') {
+            throw new InvalidArgumentException('Provide a reason when flagging this requisition.');
+        }
+
+        $companyId = $this->currentCompanyId();
+        $handoff = $this->query(
+            'SELECT h.id, h.forwarded_to, h.decision
+             FROM requisition_handoffs h
+             INNER JOIN requisitions r ON r.id = h.requisition_id AND r.company_id = h.company_id
+             WHERE h.requisition_id = ? AND h.company_id = ? AND r.status = "approved"
+             ORDER BY h.id DESC LIMIT 1',
+            [$requisitionId, $companyId]
+        )->fetch();
+        if (!$handoff || (int)$handoff['forwarded_to'] !== $userId) {
+            throw new InvalidArgumentException('Only the forwarded recipient can decide on this requisition.');
+        }
+        if (($handoff['decision'] ?? 'pending') !== 'pending') {
+            throw new InvalidArgumentException('This forwarded requisition has already been treated.');
+        }
+
+        $this->query(
+            'UPDATE requisition_handoffs SET decision = ?, decision_reason = ?, decided_by = ?, decided_at = NOW() WHERE id = ? AND decision = "pending"',
+            [$decision, $reason !== '' ? $reason : null, $userId, (int)$handoff['id']]
+        );
+        $message = $decision === 'flagged'
+            ? 'The forwarded requisition was flagged: ' . $reason
+            : 'The forwarded requisition was approved by its recipient.';
         $this->query('INSERT INTO requisition_messages (requisition_id, company_id, user_id, message) VALUES (?, ?, ?, ?)', [$requisitionId, $companyId, $userId, $message]);
     }
 }

@@ -135,13 +135,22 @@ class ProjectModel extends Model
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             )'
         );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS role_project_access (
+                company_id INT NOT NULL,
+                role_id INT NOT NULL,
+                project_id INT NOT NULL,
+                PRIMARY KEY (company_id, role_id, project_id),
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )'
+        );
     }
 
     public function getProjects(): array
     {
         $projects = $this->query(
-            'SELECT * FROM projects WHERE company_id = ? AND deleted_at IS NULL ORDER BY created_at DESC, id DESC',
-            [$this->currentCompanyId()]
+            'SELECT * FROM projects WHERE company_id = ? AND deleted_at IS NULL AND (' . $this->projectVisibilitySql() . ') ORDER BY created_at DESC, id DESC',
+            array_merge([$this->currentCompanyId()], $this->projectVisibilityParams())
         )->fetchAll();
         foreach ($projects as &$project) {
             $this->applyScheduleProgress($project);
@@ -150,15 +159,67 @@ class ProjectModel extends Model
         return $projects;
     }
 
+    public function getProjectsForAccessManagement(): array
+    {
+        return $this->query(
+            'SELECT id, project_number, name FROM projects WHERE company_id = ? AND deleted_at IS NULL ORDER BY name ASC, id ASC',
+            [$this->currentCompanyId()]
+        )->fetchAll();
+    }
+
     public function getProjectById(int $id): ?array
     {
-        $stmt = $this->query('SELECT * FROM projects WHERE id = ? AND company_id = ? AND deleted_at IS NULL LIMIT 1', [$id, $this->currentCompanyId()]);
+        $stmt = $this->query('SELECT * FROM projects WHERE id = ? AND company_id = ? AND deleted_at IS NULL AND (' . $this->projectVisibilitySql('projects.id') . ') LIMIT 1', array_merge([$id, $this->currentCompanyId()], $this->projectVisibilityParams()));
         $project = $stmt->fetch();
         if (!$project) {
             return null;
         }
         $this->applyScheduleProgress($project);
         return $project;
+    }
+
+    public function getRoleProjectAccessMap(): array
+    {
+        $map = [];
+        foreach ($this->query('SELECT role_id, project_id FROM role_project_access WHERE company_id = ? ORDER BY role_id ASC, project_id ASC', [$this->currentCompanyId()])->fetchAll() as $row) {
+            $map[(int)$row['role_id']][] = (int)$row['project_id'];
+        }
+        return $map;
+    }
+
+    public function saveRoleProjectAccess(int $roleId, array $projectIds): void
+    {
+        $companyId = $this->currentCompanyId();
+        if (!$this->query('SELECT 1 FROM roles WHERE id = ? AND company_id = ? LIMIT 1', [$roleId, $companyId])->fetchColumn()) {
+            throw new InvalidArgumentException('The selected role does not belong to this company.');
+        }
+        $validProjectIds = array_values(array_unique(array_filter(array_map('intval', $projectIds), function (int $projectId) use ($companyId): bool {
+            return $projectId > 0 && (bool)$this->query('SELECT 1 FROM projects WHERE id = ? AND company_id = ? AND deleted_at IS NULL LIMIT 1', [$projectId, $companyId])->fetchColumn();
+        })));
+        $this->query('DELETE FROM role_project_access WHERE company_id = ? AND role_id = ?', [$companyId, $roleId]);
+        foreach ($validProjectIds as $projectId) {
+            $this->query('INSERT INTO role_project_access (company_id, role_id, project_id) VALUES (?, ?, ?)', [$companyId, $roleId, $projectId]);
+        }
+    }
+
+    private function projectVisibilitySql(string $projectColumn = 'id'): string
+    {
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+            return '1 = 1';
+        }
+        return '(NOT EXISTS (SELECT 1 FROM role_project_access rpa WHERE rpa.company_id = projects.company_id AND rpa.role_id = ?)
+            OR EXISTS (SELECT 1 FROM role_project_access rpa WHERE rpa.company_id = projects.company_id AND rpa.role_id = ? AND rpa.project_id = ' . $projectColumn . '))';
+    }
+
+    private function projectVisibilityParams(): array
+    {
+        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        if (in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
+            return [];
+        }
+        $roleId = (int)($_SESSION['user']['role_id'] ?? 0);
+        return [$roleId, $roleId];
     }
 
     public function getProjectDocuments(int $projectId): array
@@ -363,12 +424,19 @@ class ProjectModel extends Model
         $projectId = (int)($data['project_id'] ?? 0);
         $projectNumber = trim((string)($data['project_number'] ?? ''));
         $name = trim((string)($data['name'] ?? ''));
+        $clientId = (int)($data['client_id'] ?? 0);
         $startDate = trim((string)($data['start_date'] ?? ''));
         $endDate = trim((string)($data['end_date'] ?? ''));
         $location = trim((string)($data['site_location'] ?? ''));
         $status = trim((string)($data['status'] ?? 'planned'));
         if ($projectNumber === '' || $name === '' || $startDate === '' || $endDate === '' || $location === '') {
             throw new InvalidArgumentException('Project number, name, dates, and site location are required.');
+        }
+        $customer = $clientId > 0
+            ? $this->query('SELECT id, company_name FROM customers WHERE id = ? LIMIT 1', [$clientId])->fetch()
+            : false;
+        if (!$customer) {
+            throw new InvalidArgumentException('Select a valid customer for this project.');
         }
         if (!in_array($status, ['planned', 'in_progress', 'completed', 'on_hold', 'cancelled'], true)) {
             throw new InvalidArgumentException('Invalid project status.');
@@ -377,8 +445,8 @@ class ProjectModel extends Model
         $values = [
             $projectNumber,
             $name,
-            (int)($data['client_id'] ?? 0),
-            trim((string)($data['client_name'] ?? '')),
+            $clientId,
+            (string)$customer['company_name'],
             trim((string)($data['consultant'] ?? '')),
             (float)($data['contract_value'] ?? 0),
             (float)($data['budget'] ?? 0),
@@ -403,5 +471,35 @@ class ProjectModel extends Model
             array_merge([$this->currentCompanyId()], $values)
         );
         return (int)$this->db->lastInsertId();
+    }
+
+    public function getCustomers(): array
+    {
+        return $this->query('SELECT id, company_name FROM customers WHERE status = "active" ORDER BY company_name ASC')->fetchAll();
+    }
+
+    public function createCustomer(array $data): array
+    {
+        $companyName = trim((string)($data['company_name'] ?? ''));
+        $contactPerson = trim((string)($data['contact_person'] ?? ''));
+        $email = trim((string)($data['email'] ?? ''));
+        $phone = trim((string)($data['phone'] ?? ''));
+        $address = trim((string)($data['address'] ?? ''));
+        if ($companyName === '' || $contactPerson === '' || $email === '' || $phone === '') {
+            throw new InvalidArgumentException('Client name, contact person, email, and phone are required.');
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new InvalidArgumentException('Enter a valid client email address.');
+        }
+
+        $customerCode = 'CLI-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
+        $this->query(
+            'INSERT INTO customers (customer_code, company_name, contact_person, email, phone, address, balance, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, "active", NOW())',
+            [$customerCode, $companyName, $contactPerson, $email, $phone, $address !== '' ? $address : null]
+        );
+        return [
+            'id' => (int)$this->db->lastInsertId(),
+            'company_name' => $companyName,
+        ];
     }
 }

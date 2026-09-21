@@ -3,6 +3,8 @@ $modules = $modules ?? [];
 $access = $access ?? [];
 $departmentGroups = $departmentGroups ?? [];
 $unassignedRoles = $unassignedRoles ?? [];
+$projects = $projects ?? [];
+$projectAccess = $projectAccess ?? [];
 ?>
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
     <div><p class="text-muted mb-1">Administration</p><h2 class="fw-bold mb-1">Role Module Access</h2><p class="text-muted mb-0">Choose which company modules each department role can open.</p></div>
@@ -31,4 +33,5 @@ $unassignedRoles = $unassignedRoles ?? [];
         </div></div>
     <?php endif; ?>
     <?php if ($departmentGroups !== [] || $unassignedRoles !== []): ?><button class="btn btn-primary" type="submit"><i class="bi bi-save me-2"></i>Save Role Module Access</button><?php endif; ?>
+    <?php if ($projects !== []): ?><div class="card shadow-sm border-0 mt-4"><div class="card-body p-4"><h5 class="fw-bold mb-1">Project visibility</h5><p class="text-muted mb-3">Select projects each role can see. Leave a role unselected to keep access to all projects.</p><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Role</th><?php foreach ($projects as $project): ?><th class="text-center" style="min-width: 150px"><?php echo htmlspecialchars($project['project_number'] . ' - ' . $project['name']); ?></th><?php endforeach; ?></tr></thead><tbody><?php foreach (array_merge($departmentGroups, [['roles' => $unassignedRoles]]) as $projectGroup): foreach (($projectGroup['roles'] ?? []) as $role): $roleId = (int)$role['id']; ?><tr><td><?php echo htmlspecialchars((string)$role['name']); ?></td><?php foreach ($projects as $project): $projectId = (int)$project['id']; ?><td class="text-center"><input class="form-check-input" type="checkbox" name="role_projects[<?php echo $roleId; ?>][]" value="<?php echo $projectId; ?>" <?php echo in_array($projectId, $projectAccess[$roleId] ?? [], true) ? 'checked' : ''; ?>><span class="visually-hidden"><?php echo htmlspecialchars($project['name']); ?> for <?php echo htmlspecialchars((string)$role['name']); ?></span></td><?php endforeach; ?></tr><?php endforeach; endforeach; ?></tbody></table></div><p class="form-text mb-0">A role becomes restricted when at least one project is selected. Roles with no selected projects remain unrestricted.</p></div></div><?php endif; ?>
 </form>

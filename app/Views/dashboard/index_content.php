@@ -2,32 +2,26 @@
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <h2 class="fw-bold mb-1"><?php echo htmlspecialchars($companyName ?? 'Company'); ?> Dashboard</h2>
-                <p class="text-muted mb-0">Executive view for finance, HR, inventory, and field operations.</p>
+                <h2 class="fw-bold mb-1">Construction ERP Dashboard</h2>
+                <p class="text-muted mb-0">Executive view for projects, finance, HR, inventory, and field operations.</p>
             </div>
             <span class="badge bg-success-subtle text-success px-3 py-2">Live Operations</span>
         </div>
     </div>
 
-    <div class="col-12">
-        <div class="card shadow-sm border-0">
-            <div class="card-body d-flex flex-column flex-md-row justify-content-between gap-3">
-                <div>
-                    <div class="text-muted small">Signed in as</div>
-                    <h4 class="fw-bold mb-1"><?php echo htmlspecialchars($currentUserName ?? 'User'); ?></h4>
-                </div>
-                <div>
-                    <div class="text-muted small">Role</div>
-                    <div class="fw-semibold"><?php echo htmlspecialchars($currentUserRole ?? 'User'); ?></div>
-                </div>
-                <div>
-                    <div class="text-muted small">Designation</div>
-                    <div class="fw-semibold"><?php echo htmlspecialchars($currentUserDesignation ?? 'Not specified'); ?></div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted">Projects</h6>
+                        <h3 class="fw-bold"><?php echo number_format((int)($projects ?? 0), 0); ?></h3>
+                    </div>
+                    <i class="bi bi-building fs-3 text-primary"></i>
                 </div>
             </div>
         </div>
     </div>
-
     <div class="col-md-3">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-body">
@@ -93,22 +87,29 @@
             </div>
         </div>
     </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted">Project Budget</h6>
+                        <h3 class="fw-bold">₦<?php echo number_format((float)($project_budget_total ?? 0), 2); ?></h3>
+                    </div>
+                    <i class="bi bi-bank fs-3 text-secondary"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="col-lg-8">
         <div class="card shadow-sm border-0 h-100">
             <div class="card-body">
                 <h5 class="fw-bold mb-3">Recent Activity</h5>
                 <ul class="list-group list-group-flush">
-                    <?php if (empty($recentActivities)): ?>
-                        <li class="list-group-item px-0 text-muted">No recent activity related to this account.</li>
-                    <?php else: ?>
-                        <?php foreach (array_slice($recentActivities, 0, 3) as $activity): ?>
-                            <li class="list-group-item px-0">
-                                <a class="text-decoration-none" href="/ERP/public/requisition/view?id=<?php echo (int)$activity['requisition_id']; ?>"><?php echo htmlspecialchars($activity['activity_text']); ?></a>
-                                <div class="small text-muted"><?php echo htmlspecialchars($activity['occurred_at']); ?></div>
-                            </li>
-                        <?php endforeach; ?>
-                        <?php if (count($recentActivities) > 3): ?><li class="list-group-item px-0"><a class="small" href="/ERP/public/requisition">See more activity</a></li><?php endif; ?>
-                    <?php endif; ?>
+                    <li class="list-group-item px-0">New project PRJ003 was created in Abuja.</li>
+                    <li class="list-group-item px-0">Invoice INV-003 was sent to Apex Builders Ltd.</li>
+                    <li class="list-group-item px-0">Inventory reorder alert triggered for cement stock.</li>
+                    <li class="list-group-item px-0">Payroll batch for June was approved.</li>
                 </ul>
             </div>
         </div>
@@ -126,19 +127,9 @@
                     <span>Low stock alerts</span>
                     <span class="badge bg-danger">2</span>
                 </div>
-                <div class="border-top mt-3 pt-3">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span>Requisitions tagged to you</span>
-                        <span class="badge <?php echo !empty($taggedRequisitions) ? 'bg-primary' : 'bg-secondary'; ?>"><?php echo count($taggedRequisitions ?? []); ?></span>
-                    </div>
-                    <?php if (!empty($taggedRequisitions)): ?>
-                        <?php foreach (array_slice($taggedRequisitions, 0, 3) as $taggedRequisition): ?>
-                            <a class="d-block small text-decoration-none mb-1" href="/ERP/public/requisition/view?id=<?php echo (int)$taggedRequisition['id']; ?>"><i class="bi bi-arrow-right-circle me-1"></i><?php echo htmlspecialchars($taggedRequisition['title']); ?></a>
-                        <?php endforeach; ?>
-                        <?php if (count($taggedRequisitions) > 3): ?><a class="small" href="/ERP/public/requisition">View all tagged requisitions</a><?php endif; ?>
-                    <?php else: ?>
-                        <div class="small text-muted">No pending requisitions require your attention.</div>
-                    <?php endif; ?>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>Projects due this month</span>
+                    <span class="badge bg-primary">6</span>
                 </div>
             </div>
         </div>

@@ -10,6 +10,9 @@
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/management/procurement">Procurement</a></div>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/modules/projects">Projects</a></div>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/modules/contract-admin"><i class="bi bi-file-earmark-check me-1"></i>Contract Admin</a></div>
+            <?php foreach (['sales_marketing' => 'Sales & Marketing', 'quality_control' => 'Quality Control', 'workshop_maintenance' => 'Workshop & Maintenance', 'mix_design' => 'Mix Design', 'dispatch' => 'Dispatch Management', 'business_intelligence' => 'Business Intelligence'] as $rmcKey => $rmcLabel): ?>
+                <?php if (($companyModel ?? null) && $companyModel->hasCurrentUserModuleAccess($rmcKey)): ?><div class="col-md-3"><a class="btn btn-outline-success w-100" href="/ERP/public/modules/rmc?module=<?php echo urlencode($rmcKey); ?>"><?php echo htmlspecialchars($rmcLabel); ?></a></div><?php endif; ?>
+            <?php endforeach; ?>
             <?php foreach (($customModules ?? []) as $customModule): ?>
                 <?php $customKey = (string)$customModule['module_key']; if (!($companyModel ?? null) || !($companyModel->hasModuleAccess($customKey) ?? false)) { continue; } ?>
                 <div class="col-md-3"><a class="btn btn-outline-info w-100" href="/ERP/public/modules/custom?module=<?php echo urlencode($customKey); ?>"><?php echo htmlspecialchars((string)$customModule['module_name']); ?></a></div>

@@ -13,6 +13,17 @@
                 <div class="card border-0 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-muted">Projects</span>
+                            <i class="bi bi-building text-primary fs-4"></i>
+                        </div>
+                        <h3 class="fw-bold mb-0">12</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
                             <span class="text-muted">Staff</span>
                             <i class="bi bi-people text-success fs-4"></i>
                         </div>
@@ -51,6 +62,9 @@
                         <h5 class="fw-bold mb-3">Quick access modules</h5>
                         <div class="row g-3">
                             <div class="col-md-6">
+                                <a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/modules/projects">Projects</a>
+                            </div>
+                            <div class="col-md-6">
                                 <a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/modules/inventory">Inventory</a>
                             </div>
                             <div class="col-md-6">
@@ -65,12 +79,6 @@
                             <div class="col-md-6">
                                 <a class="btn btn-outline-secondary w-100 py-3" href="/ERP/public/management/procurement">Procurement</a>
                             </div>
-                            <div class="col-md-6">
-                                <a class="btn btn-outline-dark w-100 py-3" href="/ERP/public/modules/workflow"><i class="bi bi-signpost-2 me-2"></i>Approval routes</a>
-                            </div>
-                            <div class="col-md-6">
-                                <a class="btn btn-outline-dark w-100 py-3" href="/ERP/public/modules/requisition-form"><i class="bi bi-ui-checks-grid me-2"></i>Requisition form</a>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -83,6 +91,7 @@
                         <ul class="list-group list-group-flush">
                             <li class="list-group-item px-0">4 pending invoices</li>
                             <li class="list-group-item px-0">2 low-stock items</li>
+                            <li class="list-group-item px-0">6 projects due this month</li>
                         </ul>
                     </div>
                 </div>

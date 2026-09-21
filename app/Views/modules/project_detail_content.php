@@ -2,6 +2,8 @@
 $statusLabel = ucwords(str_replace('_', ' ', (string)($project['status'] ?? 'planned')));
 $progress = max(0, min(100, (int)($project['progress_percent'] ?? 0)));
 $schedule = $schedule ?? [];
+$employeeSearch = (string)($employeeSearch ?? '');
+$employeeStatus = (string)($employeeStatus ?? '');
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -82,6 +84,12 @@ $schedule = $schedule ?? [];
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div><h5 class="fw-bold mb-1">Site Team</h5><p class="text-muted mb-0">Assign employees and name their jobs on this project site.</p></div>
         </div>
+        <form method="get" action="/ERP/public/modules/projects/view" class="row g-2 align-items-end mb-4">
+            <input type="hidden" name="id" value="<?php echo (int)$project['id']; ?>">
+            <div class="col-md-7"><label class="form-label" for="projectEmployeeSearch">Search employees</label><input class="form-control" id="projectEmployeeSearch" name="employee_search" value="<?php echo htmlspecialchars($employeeSearch); ?>" placeholder="Name, employee ID, position, department, email or phone"></div>
+            <div class="col-md-3"><label class="form-label" for="projectEmployeeStatus">Status</label><select class="form-select" id="projectEmployeeStatus" name="employee_status"><option value="">All statuses</option><option value="active" <?php echo $employeeStatus === 'active' ? 'selected' : ''; ?>>Active</option><option value="inactive" <?php echo $employeeStatus === 'inactive' ? 'selected' : ''; ?>>Inactive</option><option value="terminated" <?php echo $employeeStatus === 'terminated' ? 'selected' : ''; ?>>Terminated</option></select></div>
+            <div class="col-md-2 d-flex gap-2"><button class="btn btn-outline-primary flex-fill" type="submit"><i class="bi bi-search me-1"></i>Search</button><a class="btn btn-outline-secondary" href="/ERP/public/modules/projects/view?id=<?php echo (int)$project['id']; ?>" title="Clear employee search" aria-label="Clear employee search"><i class="bi bi-x-lg"></i></a></div>
+        </form>
         <form method="post" action="/ERP/public/projects/assign-employee" class="row g-2 align-items-end mb-4">
             <input type="hidden" name="project_id" value="<?php echo (int)$project['id']; ?>">
             <div class="col-md-5"><label class="form-label">Employee</label><select class="form-select" name="employee_id" required><option value="">Select employee</option><?php foreach ($employees as $employee): ?><option value="<?php echo (int)$employee['id']; ?>"><?php echo htmlspecialchars(trim($employee['first_name'] . ' ' . $employee['last_name']) . ' - ' . $employee['employee_code']); ?></option><?php endforeach; ?></select></div>

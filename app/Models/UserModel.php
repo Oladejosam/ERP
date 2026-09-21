@@ -15,16 +15,6 @@ class UserModel extends Model
 
     private function ensureUserChangeTable(): void
     {
-        $this->query('ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INT NULL AFTER id');
-        $this->query('UPDATE users u INNER JOIN employees e ON e.id = u.employee_id SET u.company_id = e.company_id WHERE u.company_id IS NULL');
-        try {
-            $this->query('ALTER TABLE users DROP INDEX email');
-        } catch (Throwable $exception) {
-        }
-        try {
-            $this->query('ALTER TABLE users ADD UNIQUE KEY unique_user_company_email (company_id, email)');
-        } catch (Throwable $exception) {
-        }
         $this->query(
             'CREATE TABLE IF NOT EXISTS user_change_history (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -43,13 +33,10 @@ class UserModel extends Model
         return trim(strtolower($email));
     }
 
-    public function authenticate(string $email, string $password, int $companyId): ?array
+    public function authenticate(string $email, string $password): ?array
     {
         $email = $this->normalizeEmail($email);
-        $stmt = $this->query(
-            'SELECT u.*, e.status AS employee_status, e.company_id AS employee_company_id FROM users u LEFT JOIN employees e ON e.id = u.employee_id INNER JOIN companies c ON c.id = ? AND c.is_active = 1 WHERE u.email = ? AND (u.company_id IS NULL OR u.company_id = c.id) AND (u.employee_id IS NULL OR (e.id IS NOT NULL AND e.status = "active" AND e.company_id = c.id)) LIMIT 1',
-            [$companyId, $email]
-        );
+        $stmt = $this->query('SELECT * FROM users WHERE email = ? LIMIT 1', [$email]);
         $user = $stmt->fetch();
         if ($user) {
             $storedHash = (string)($user['password_hash'] ?? '');
@@ -63,21 +50,16 @@ class UserModel extends Model
     public function getUserByEmail(string $email): ?array
     {
         $email = $this->normalizeEmail($email);
-        $stmt = $this->query('SELECT * FROM users WHERE email = ? AND (company_id IS NULL OR company_id = ?) ORDER BY company_id IS NOT NULL DESC LIMIT 1', [$email, $this->currentCompanyId()]);
+        $stmt = $this->query('SELECT * FROM users WHERE email = ? LIMIT 1', [$email]);
         $user = $stmt->fetch();
         return $user ?: null;
     }
 
     public function getUserByEmployeeId(int $employeeId): ?array
     {
-        $stmt = $this->query('SELECT * FROM users WHERE employee_id = ? AND (company_id IS NULL OR company_id = ?) LIMIT 1', [$employeeId, $this->currentCompanyId()]);
+        $stmt = $this->query('SELECT * FROM users WHERE employee_id = ? LIMIT 1', [$employeeId]);
         $user = $stmt->fetch();
         return $user ?: null;
-    }
-
-    public function deleteUserByEmployeeId(int $employeeId): void
-    {
-        $this->query('DELETE FROM users WHERE employee_id = ?', [$employeeId]);
     }
 
     public function updateUserByEmployeeId(int $employeeId, array $data, string $changeReason = ''): bool
@@ -139,13 +121,8 @@ class UserModel extends Model
     public function createUser(array $data): int
     {
         $email = $this->normalizeEmail($data['email'] ?? '');
-        $companyId = $data['company_id'] ?? null;
-        if ($companyId === null && !empty($data['employee_id'])) {
-            $companyId = $this->query('SELECT company_id FROM employees WHERE id = ? LIMIT 1', [(int)$data['employee_id']])->fetchColumn();
-        }
-        $sql = 'INSERT INTO users (company_id, name, email, password_hash, role_id, employee_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())';
+        $sql = 'INSERT INTO users (name, email, password_hash, role_id, employee_id, created_at) VALUES (?, ?, ?, ?, ?, NOW())';
         $this->query($sql, [
-            $companyId !== null ? (int)$companyId : null,
             $data['name'],
             $email,
             password_hash($data['password'], PASSWORD_BCRYPT),
@@ -238,35 +215,6 @@ class UserModel extends Model
 
         return $created;
     }
-    public function populateUsersFromEmployees(): int
-    {
-        $roleModel = new RoleModel();
-        $staffRoleId = $roleModel->getRoleIdByName('Staff');
-        if ($staffRoleId === null) {
-            $staffRoleId = $roleModel->createRoleIfMissing('Staff', 'Standard staff account');
-        }
-
-        $employees = $this->query('SELECT id, first_name, last_name, email, company_id FROM employees WHERE company_id = ? AND email IS NOT NULL AND email <> ""', [$this->currentCompanyId()])->fetchAll();
-        $created = 0;
-        foreach ($employees as $employee) {
-            $email = $this->normalizeEmail((string)$employee['email']);
-            if ($this->getUserByEmail($email) !== null) {
-                continue;
-            }
-
-            $name = trim((string)$employee['first_name'] . ' ' . (string)$employee['last_name']);
-            $this->createUser([
-                'name' => $name !== '' ? $name : 'Employee ' . (int)$employee['id'],
-                'email' => $email,
-                'password' => 'Welcome123!',
-                'role_id' => $staffRoleId,
-                'employee_id' => (int)$employee['id'],
-                'company_id' => (int)$employee['company_id'],
-            ]);
-            $created++;
-        }
-        return $created;
-    }
 
     public function createMissingUserCredentials(): array
     {
@@ -286,7 +234,11 @@ class UserModel extends Model
                 $name = 'Employee ' . ($employee['id'] ?? '');
             }
 
-            $roleId = $this->resolveEmployeeRoleId($employee, $roleModel);
+            $roleName = trim((string)($employee['role_name'] ?? 'Staff')) ?: 'Staff';
+            $roleId = $roleModel->getRoleIdByName($roleName);
+            if ($roleId === null) {
+                $roleId = $roleModel->createRoleIfMissing($roleName, $roleName . ' role');
+            }
 
             $password = substr(bin2hex(random_bytes(6)), 0, 12) . 'A1!';
 
@@ -302,52 +254,6 @@ class UserModel extends Model
         }
 
         return $created;
-    }
-
-    public function resolveEmployeeRoleId(array $employee, ?RoleModel $roleModel = null): int
-    {
-        $roleModel = $roleModel ?? new RoleModel();
-        $roles = $roleModel->getRoles();
-        $roleNames = [];
-        foreach (RoleModel::defaultRoleNames() as $roleName) {
-            $roleId = $roleModel->getRoleIdByName($roleName);
-            if ($roleId !== null) {
-                $roleNames[strtolower($roleName)] = ['id' => $roleId, 'name' => $roleName];
-            }
-        }
-        foreach ($roles as $role) {
-            $name = trim((string)($role['name'] ?? ''));
-            if ($name !== '') {
-                $roleNames[strtolower($name)] = ['id' => (int)$role['id'], 'name' => $name];
-            }
-        }
-
-        $fields = [
-            trim((string)($employee['designation'] ?? '')),
-            trim((string)($employee['position'] ?? '')),
-        ];
-        foreach ($fields as $field) {
-            $key = strtolower($field);
-            if ($key !== '' && isset($roleNames[$key])) {
-                return $roleNames[$key]['id'];
-            }
-        }
-
-        foreach ($fields as $field) {
-            $normalizedField = strtolower($field);
-            if ($normalizedField === '') {
-                continue;
-            }
-            foreach ($roleNames as $role) {
-                $normalizedRole = strtolower($role['name']);
-                if (strpos($normalizedField, $normalizedRole) !== false || strpos($normalizedRole, $normalizedField) !== false) {
-                    return $role['id'];
-                }
-            }
-        }
-
-        $staffRoleId = $roleModel->getRoleIdByName('Staff');
-        return $staffRoleId ?? $roleModel->createRoleIfMissing('Staff', 'Standard staff account');
     }
 
     public function syncEmployeeProfile(array $user): array
@@ -437,8 +343,8 @@ class UserModel extends Model
                 }
 
                 $this->query(
-                    'INSERT INTO users (company_id, name, email, password_hash, role_id, employee_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
-                    [$this->currentCompanyId(), $name, $email, password_hash($this->demoPasswordForRole($roleName, $index), PASSWORD_BCRYPT), $roleId, $employeeId]
+                    'INSERT INTO users (name, email, password_hash, role_id, employee_id, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
+                    [$name, $email, password_hash($this->demoPasswordForRole($roleName, $index), PASSWORD_BCRYPT), $roleId, $employeeId]
                 );
             }
         }

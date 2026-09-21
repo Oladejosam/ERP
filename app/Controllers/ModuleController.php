@@ -13,6 +13,8 @@ require_once APP_ROOT . '/app/Models/WorkflowModel.php';
 require_once APP_ROOT . '/app/Models/ContractAdminModel.php';
 require_once APP_ROOT . '/app/Models/RequisitionModel.php';
 require_once APP_ROOT . '/app/Models/ChatModel.php';
+require_once APP_ROOT . '/app/Models/PurchaseOrderModel.php';
+require_once APP_ROOT . '/app/Models/RmcOperationsModel.php';
 
 class ModuleController extends BaseController
 {
@@ -24,6 +26,7 @@ class ModuleController extends BaseController
     private ContractAdminModel $contractAdminModel;
     private RequisitionModel $requisitionModel;
     private ChatModel $chatModel;
+    private RmcOperationsModel $rmcOperationsModel;
 
     public function __construct()
     {
@@ -35,6 +38,7 @@ class ModuleController extends BaseController
         $this->contractAdminModel = new ContractAdminModel();
         $this->requisitionModel = new RequisitionModel();
         $this->chatModel = new ChatModel();
+        $this->rmcOperationsModel = new RmcOperationsModel();
     }
 
     public function requisitionForm(): void
@@ -117,6 +121,280 @@ class ModuleController extends BaseController
         ]);
     }
 
+    public function rmcOperations(): void
+    {
+        $this->requireAccess();
+        $moduleKey = trim((string)($_GET['module'] ?? ''));
+        $modules = CompanyModel::availableModules();
+        $rmcModules = [
+            'sales_marketing',
+            'quality_control',
+            'workshop_maintenance',
+            'mix_design',
+            'business_intelligence',
+            'dispatch',
+        ];
+
+        $period = in_array((string)($_GET['period'] ?? '6m'), ['6m', '12m'], true) ? (string)($_GET['period'] ?? '6m') : '6m';
+        $category = in_array((string)($_GET['category'] ?? 'all'), ['all', 'sales', 'dispatch', 'quality', 'maintenance', 'mix_design'], true) ? (string)($_GET['category'] ?? 'all') : 'all';
+
+        if ($moduleKey === 'business_intelligence' && !empty($_GET['export'])) {
+            $this->exportBusinessIntelligenceCsv($period, $category);
+            return;
+        }
+
+        if (!in_array($moduleKey, $rmcModules, true) || !$this->companyModelHasModuleAccess($moduleKey)) {
+            $this->redirect('/modules');
+        }
+
+        if ($moduleKey === 'sales_marketing') {
+            $this->view('modules/rmc_sales_marketing', [
+                'title' => 'Sales & Marketing',
+                'salesData' => $this->rmcOperationsModel->getSalesData(),
+            ]);
+            return;
+        }
+
+        if ($moduleKey === 'workshop_maintenance') {
+            $this->view('modules/rmc_maintenance', [
+                'title' => 'Workshop & Maintenance',
+                'maintenanceData' => $this->rmcOperationsModel->getMaintenanceData(),
+            ]);
+            return;
+        }
+
+        if ($moduleKey === 'quality_control') {
+            $qualityData = $this->rmcOperationsModel->getQualityData();
+            $this->view('modules/rmc_quality_control', [
+                'title' => 'Quality Control',
+                'moduleName' => 'Quality Control',
+                'qualityData' => $qualityData,
+            ]);
+            return;
+        }
+
+        if ($moduleKey === 'mix_design') {
+            $this->view('modules/rmc_mix_design', [
+                'title' => 'Mix Design',
+                'moduleName' => 'Mix Design',
+                'mixDesignData' => $this->rmcOperationsModel->getMixDesignData(),
+            ]);
+            return;
+        }
+
+        $features = [
+            'sales_marketing' => ['Leads and opportunities', 'Inquiry follow-ups', 'Auto pricing', 'Sales quotations', 'Sales orders', 'Delivery challans', 'Dispatch management'],
+            'quality_control' => ['Cube compressive strength', 'Inspection test plans', 'Sieve analysis', 'Bulk density', 'Cement consistency', 'Water absorption', 'Flakiness and elongation'],
+            'workshop_maintenance' => ['Parts ordering and inward', 'Parts issue and stock', 'Diesel issue and costing', 'Tyre and battery management', 'Job cards', 'Maintenance schedules'],
+            'mix_design' => ['Mix design management', 'IS code standards', 'Trial mix process', 'Water-cement ratio', 'Mix design theory'],
+            'business_intelligence' => ['Interactive dashboards', 'Analytical tools', 'Interactive charts', 'Mail and SMS alerts', 'Flexible report generation'],
+            'dispatch' => ['Delivery challans', 'Vehicle and driver assignment', 'Delivery locations', 'In-transit tracking', 'Delivered and returned status'],
+        ];
+
+        $fields = [
+            'sales_marketing' => [['order_number', 'Order number', 'text'], ['customer_name', 'Customer name', 'text'], ['concrete_grade', 'Concrete grade', 'text'], ['quantity_m3', 'Quantity (m3)', 'number'], ['delivery_date', 'Delivery date', 'date'], ['amount', 'Amount', 'number'], ['status', 'Status', 'select', ['draft', 'quoted', 'approved', 'dispatched', 'completed', 'cancelled']], ['notes', 'Notes', 'textarea']],
+            'quality_control' => [['test_number', 'Test number', 'text'], ['batch_reference', 'Batch reference', 'text'], ['test_type', 'Test type', 'text'], ['result', 'Result', 'text'], ['tested_at', 'Test date', 'date'], ['status', 'Status', 'select', ['pending', 'passed', 'failed', 'retest']], ['mix_design_id', 'Approved mix design ID', 'number'], ['notes', 'Notes', 'textarea']],
+            'workshop_maintenance' => [['job_card', 'Job card', 'text'], ['asset_name', 'Asset or vehicle', 'text'], ['issue_description', 'Issue description', 'textarea'], ['scheduled_date', 'Scheduled date', 'date'], ['cost', 'Estimated cost', 'number'], ['status', 'Status', 'select', ['open', 'scheduled', 'in_progress', 'completed', 'cancelled']], ['notes', 'Notes', 'textarea']],
+            'mix_design' => [['mix_code', 'Mix code', 'text'], ['concrete_grade', 'Concrete grade', 'text'], ['project_reference', 'Project reference', 'text'], ['design_method', 'Design method', 'text'], ['target_strength_mpa', 'Target strength (MPa)', 'number'], ['slump_mm', 'Slump (mm)', 'number'], ['water_cement_ratio', 'Water/cement ratio', 'number'], ['cement_kg_m3', 'Cement (kg/m3)', 'number'], ['fine_aggregate_kg_m3', 'Fine aggregate (kg/m3)', 'number'], ['coarse_aggregate_kg_m3', 'Coarse aggregate (kg/m3)', 'number'], ['water_kg_m3', 'Water (kg/m3)', 'number'], ['admixture_kg_m3', 'Admixture (kg/m3)', 'number'], ['status', 'Status', 'select', ['draft', 'trial', 'pending_approval', 'approved', 'rejected', 'archived']], ['notes', 'Notes', 'textarea']],
+            'dispatch' => [
+                ['dispatch_type', 'Dispatch type', 'select', ['mixed_cement' => 'Mixed cement', 'materials' => 'Store materials', 'staff' => 'Staff dispatch'], 'all'],
+                ['dispatch_number', 'Dispatch number', 'text', [], 'all'],
+                ['order_reference', 'Order reference', 'text', [], 'mixed_cement'],
+                ['vehicle_number', 'Vehicle number', 'text', [], 'mixed_cement'],
+                ['driver_name', 'Driver name', 'text', [], 'mixed_cement'],
+                ['delivery_location', 'Delivery location', 'text', [], 'all'],
+                ['quantity_m3', 'Quantity (m3)', 'number', [], 'mixed_cement'],
+                ['inventory_item_id', 'Inventory item', 'select', [], 'materials'],
+                ['item_name', 'Material name', 'text', [], 'materials'],
+                ['quantity', 'Quantity', 'number', [], 'materials'],
+                ['unit', 'Unit', 'text', [], 'materials'],
+                ['staff_id', 'Staff member', 'select', [], 'staff'],
+                ['issued_to', 'Issued to / destination', 'text', [], 'materials'],
+                ['dispatch_date', 'Dispatch date', 'date', [], 'all'],
+                ['status', 'Status', 'select', ['planned', 'loaded', 'in_transit', 'delivered', 'returned', 'cancelled'], 'all'],
+                ['mix_design_id', 'Approved mix design', 'select', [], 'mixed_cement'],
+                ['batch_reference', 'Batch reference', 'text', [], 'mixed_cement'],
+                ['notes', 'Notes', 'textarea', [], 'all'],
+            ],
+        ];
+
+        $approvedMixes = $moduleKey === 'dispatch' ? ($this->rmcOperationsModel->getMixDesignData()['approvedMixes'] ?? []) : [];
+        $inventoryItems = $moduleKey === 'dispatch' ? $this->inventoryModel->getItems() : [];
+        $dispatchStaff = $moduleKey === 'dispatch' ? $this->employeeModel->getEmployees() : [];
+
+        $this->view('modules/rmc_operations', [
+            'title' => $modules[$moduleKey],
+            'moduleName' => $modules[$moduleKey],
+            'features' => $features[$moduleKey],
+            'fields' => $fields[$moduleKey] ?? [],
+            'records' => $this->rmcOperationsModel->getRecords($moduleKey),
+            'report' => $moduleKey === 'business_intelligence' ? $this->rmcOperationsModel->report() : [],
+            'approvedMixes' => $approvedMixes,
+            'inventoryItems' => $inventoryItems,
+            'dispatchStaff' => $dispatchStaff,
+            'biTrendData' => $moduleKey === 'business_intelligence' ? $this->rmcOperationsModel->getTrendSeries($period, $category) : [],
+            'biPeriod' => $period,
+            'biCategory' => $category,
+        ]);
+    }
+
+    public function exportBusinessIntelligenceCsv(string $period = '6m', string $category = 'all'): void
+    {
+        $rows = $this->rmcOperationsModel->getTrendSeries($period, $category);
+        $output = fopen('php://output', 'w');
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="erp-business-intelligence-' . $period . '-' . $category . '.csv"');
+        fputcsv($output, ['Month', 'Value']);
+        foreach ($rows as $row) {
+            fputcsv($output, [(string)$row['label'], (string)$row['value']]);
+        }
+        fclose($output);
+        exit;
+    }
+
+    public function createQualityPlan(): void
+    {
+        $this->saveQualityAction('createQualityPlan');
+    }
+
+    public function createSalesLead(): void
+    {
+        $this->saveSalesAction('createLead');
+    }
+
+    public function createSalesCampaign(): void
+    {
+        $this->saveSalesAction('createCampaign');
+    }
+
+    public function createSalesQuote(): void
+    {
+        $this->saveSalesAction('createQuote');
+    }
+
+    public function createMaintenanceAsset(): void
+    {
+        $this->saveMaintenanceAction('createMaintenanceAsset');
+    }
+
+    public function createMaintenanceSchedule(): void
+    {
+        $this->saveMaintenanceAction('createMaintenanceSchedule');
+    }
+
+    public function createMaintenancePart(): void
+    {
+        $this->saveMaintenanceAction('createMaintenancePart');
+    }
+
+    public function createMaintenanceFuel(): void
+    {
+        $this->saveMaintenanceAction('createMaintenanceFuel');
+    }
+
+    private function saveMaintenanceAction(string $method): void
+    {
+        $this->requireAccess();
+        if (!$this->companyModelHasModuleAccess('workshop_maintenance')) {
+            $this->redirect('/modules');
+        }
+        try {
+            $this->rmcOperationsModel->{$method}($_POST, (int)($_SESSION['user']['id'] ?? 0));
+            $_SESSION['rmc_flash'] = 'Maintenance record saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['rmc_flash'] = 'Unable to save maintenance record: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/rmc?module=workshop_maintenance');
+    }
+
+    private function saveSalesAction(string $method): void
+    {
+        $this->requireAccess();
+        if (!$this->companyModelHasModuleAccess('sales_marketing')) {
+            $this->redirect('/modules');
+        }
+        try {
+            $this->rmcOperationsModel->{$method}($_POST, (int)($_SESSION['user']['id'] ?? 0));
+            $_SESSION['rmc_flash'] = 'Sales record saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['rmc_flash'] = 'Unable to save sales record: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/rmc?module=sales_marketing');
+    }
+
+    public function createMixDesign(): void
+    {
+        $this->saveMixDesignAction('createMixDesign');
+    }
+
+    public function createQualityInspection(): void
+    {
+        $this->saveQualityAction('createQualityInspection');
+    }
+
+    public function createQualityNcr(): void
+    {
+        $this->saveQualityAction('createNcr');
+    }
+
+    public function createCorrectiveAction(): void
+    {
+        $this->saveQualityAction('createCorrectiveAction');
+    }
+
+    private function saveMixDesignAction(string $method): void
+    {
+        $this->requireAccess();
+        if (!$this->companyModelHasModuleAccess('mix_design')) {
+            $this->redirect('/modules');
+        }
+        try {
+            $this->rmcOperationsModel->{$method}($_POST, (int)($_SESSION['user']['id'] ?? 0));
+            $_SESSION['rmc_flash'] = 'Mix design saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['rmc_flash'] = 'Unable to save mix design: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/rmc?module=mix_design');
+    }
+
+    private function saveQualityAction(string $method): void
+    {
+        $this->requireAccess();
+        if (!$this->companyModelHasModuleAccess('quality_control')) {
+            $this->redirect('/modules');
+        }
+        try {
+            $this->rmcOperationsModel->{$method}($_POST, (int)($_SESSION['user']['id'] ?? 0));
+            $_SESSION['rmc_flash'] = 'Quality-control record saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['rmc_flash'] = 'Unable to save quality-control record: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/rmc?module=quality_control');
+    }
+
+    public function createRmcRecord(): void
+    {
+        $this->requireAccess();
+        $moduleKey = trim((string)($_POST['module'] ?? ''));
+        if (!$this->rmcOperationsModel->moduleExists($moduleKey) || !$this->companyModelHasModuleAccess($moduleKey)) {
+            $this->redirect('/modules');
+        }
+
+        try {
+            $this->rmcOperationsModel->create($moduleKey, $_POST, (int)($_SESSION['user']['id'] ?? 0));
+            $_SESSION['rmc_flash'] = 'RMC transaction saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['rmc_flash'] = 'Unable to save transaction: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/rmc?module=' . urlencode($moduleKey));
+    }
+
+    private function companyModelHasModuleAccess(string $moduleKey): bool
+    {
+        $companyModel = new CompanyModel();
+        return $companyModel->hasCurrentUserModuleAccess($moduleKey);
+    }
+
     public function workflow(): void
     {
         $this->requireSuperAdmin();
@@ -187,6 +465,12 @@ class ModuleController extends BaseController
         $items = $this->inventoryModel->getItems($search, $searchField);
         $categories = $this->inventoryModel->getCategories();
         $this->view('modules/inventory', ['title' => 'Inventory', 'items' => $items, 'categories' => $categories, 'search' => $search, 'searchField' => $searchField, 'availableSearchFields' => $availableSearchFields]);
+    }
+
+    public function searchInventoryItems(): void
+    {
+        $this->requireCompanyModule('inventory');
+        $this->json(['items' => $this->inventoryModel->searchItems((string)($_GET['q'] ?? ''))]);
     }
 
     public function contractAdmin(): void
@@ -306,6 +590,7 @@ class ModuleController extends BaseController
         $this->view('modules/projects', [
             'title' => 'Projects',
             'projects' => $this->projectModel->getProjects(),
+            'customers' => $this->projectModel->getCustomers(),
         ]);
     }
 
@@ -313,6 +598,8 @@ class ModuleController extends BaseController
     {
         $this->requireCompanyModule('projects');
         $projectId = (int)($_GET['id'] ?? 0);
+        $employeeSearch = trim((string)($_GET['employee_search'] ?? ''));
+        $employeeStatus = trim((string)($_GET['employee_status'] ?? ''));
         $project = $this->projectModel->getProjectById($projectId);
         if (!$project) {
             $_SESSION['project_flash'] = 'Project not found.';
@@ -325,7 +612,9 @@ class ModuleController extends BaseController
             'documents' => $this->projectModel->getProjectDocuments($projectId),
             'assignments' => $this->projectModel->getProjectAssignments($projectId),
             'schedule' => $this->projectModel->getProjectSchedule($projectId),
-            'employees' => $this->employeeModel->getEmployees(),
+            'employees' => $this->employeeModel->getEmployees($employeeSearch, $employeeStatus),
+            'employeeSearch' => $employeeSearch,
+            'employeeStatus' => $employeeStatus,
             'budgets' => $this->projectModel->getProjectBudgets($projectId),
             'deletedBudgets' => $this->projectModel->getDeletedProjectBudgets($projectId),
         ]);
@@ -335,6 +624,7 @@ class ModuleController extends BaseController
     {
         $this->requireCompanyModule('projects');
         $projectId = (int)($_POST['project_id'] ?? 0);
+        $this->requireVisibleProject($projectId);
         try {
             $this->projectModel->addProjectBudget($projectId, $_POST);
             $_SESSION['project_flash'] = 'Budget line added successfully.';
@@ -348,6 +638,7 @@ class ModuleController extends BaseController
     {
         $this->requireCompanyModule('projects');
         $projectId = (int)($_POST['project_id'] ?? 0);
+        $this->requireVisibleProject($projectId);
         try {
             $this->projectModel->saveSchedule($_POST);
             $_SESSION['project_flash'] = 'Project schedule saved successfully.';
@@ -361,6 +652,7 @@ class ModuleController extends BaseController
     {
         $this->requireCompanyModule('projects');
         $projectId = (int)($_POST['project_id'] ?? 0);
+        $this->requireVisibleProject($projectId);
         try {
             $this->projectModel->deleteProjectBudget((int)($_POST['budget_id'] ?? 0), (string)($_POST['deletion_reason'] ?? ''), (int)($_SESSION['user']['id'] ?? 0) ?: null);
             $_SESSION['project_flash'] = 'Budget item deleted and recorded in the audit history.';
@@ -373,6 +665,7 @@ class ModuleController extends BaseController
     public function assignProjectEmployee(): void
     {
         $this->requireCompanyModule('projects');
+        $this->requireVisibleProject((int)($_POST['project_id'] ?? 0));
         try {
             $this->projectModel->assignEmployee(
                 (int)($_POST['project_id'] ?? 0),
@@ -390,6 +683,7 @@ class ModuleController extends BaseController
     {
         $this->requireCompanyModule('projects');
         $projectId = (int)($_POST['project_id'] ?? 0);
+        $this->requireVisibleProject($projectId);
         $this->projectModel->removeAssignment((int)($_POST['assignment_id'] ?? 0));
         $_SESSION['project_flash'] = 'Employee removed from the project site.';
         $this->redirect('/modules/projects/view?id=' . $projectId);
@@ -400,7 +694,7 @@ class ModuleController extends BaseController
         $this->requireCompanyModule('projects');
         $documentId = (int)($_GET['id'] ?? 0);
         $document = $this->projectModel->getProjectDocument($documentId);
-        if (!$document) {
+        if (!$document || !$this->projectModel->getProjectById((int)$document['project_id'])) {
             http_response_code(404);
             echo 'Document not found.';
             return;
@@ -420,6 +714,14 @@ class ModuleController extends BaseController
         exit;
     }
 
+    private function requireVisibleProject(int $projectId): void
+    {
+        if (!$this->projectModel->getProjectById($projectId)) {
+            $_SESSION['project_flash'] = 'You do not have access to this project.';
+            $this->redirect('/modules/projects');
+        }
+    }
+
     public function saveProject(): void
     {
         $this->requireCompanyModule('projects');
@@ -433,6 +735,16 @@ class ModuleController extends BaseController
             }
         }
         $this->redirect('/modules/projects');
+    }
+
+    public function createProjectCustomer(): void
+    {
+        $this->requireCompanyModule('projects');
+        try {
+            $this->json(['success' => true, 'customer' => $this->projectModel->createCustomer($_POST)]);
+        } catch (Throwable $exception) {
+            $this->json(['success' => false, 'message' => $exception->getMessage()]);
+        }
     }
 
     private function storeProjectDocuments(int $projectId, ?array $files, array $labels): void
@@ -526,7 +838,17 @@ class ModuleController extends BaseController
 
         $changeHistory = $this->inventoryModel->getItemChangeHistory($itemId);
         $issueHistory = $this->inventoryModel->getItemIssueHistory($itemId);
-        $this->view('modules/item_detail', ['title' => 'Inventory Item', 'item' => $item, 'changeHistory' => $changeHistory, 'issueHistory' => $issueHistory, 'canIssueInventory' => $this->canHandleStoreInventory()]);
+        $canRaisePurchaseOrder = $this->canHandleStoreInventory();
+        $procurementSuppliers = $canRaisePurchaseOrder ? (new PurchaseOrderModel())->getSuppliers() : [];
+        $this->view('modules/item_detail', [
+            'title' => 'Inventory Item',
+            'item' => $item,
+            'changeHistory' => $changeHistory,
+            'issueHistory' => $issueHistory,
+            'canIssueInventory' => $canRaisePurchaseOrder,
+            'canRaisePurchaseOrder' => $canRaisePurchaseOrder,
+            'procurementSuppliers' => $procurementSuppliers,
+        ]);
     }
 
     public function issueItem(): void
@@ -542,6 +864,23 @@ class ModuleController extends BaseController
             $_SESSION['inventory_flash'] = 'Inventory issue recorded successfully.';
         } catch (Throwable $exception) {
             $_SESSION['inventory_flash'] = 'Unable to record inventory issue: ' . $exception->getMessage();
+        }
+        $this->redirect('/inventory/detail?id=' . $itemId);
+    }
+
+    public function allocateItem(): void
+    {
+        $this->requireCompanyModule('inventory');
+        if (!$this->canHandleStoreInventory()) {
+            $_SESSION['inventory_flash'] = 'Only personnel in the Store department can allocate inventory items.';
+            $this->redirect('/inventory/detail?id=' . (int)($_POST['item_id'] ?? 0));
+        }
+        $itemId = (int)($_POST['item_id'] ?? 0);
+        try {
+            $this->inventoryModel->allocateStock($itemId, (int)($_POST['quantity'] ?? 0), (string)($_POST['allocated_to'] ?? ''), (int)($_SESSION['user']['id'] ?? 0) ?: null);
+            $_SESSION['inventory_flash'] = 'Inventory stock allocated successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['inventory_flash'] = 'Unable to allocate inventory stock: ' . $exception->getMessage();
         }
         $this->redirect('/inventory/detail?id=' . $itemId);
     }

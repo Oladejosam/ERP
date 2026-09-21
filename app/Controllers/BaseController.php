@@ -12,15 +12,6 @@ class BaseController extends Controller
             header('Location: ' . BASE_URL . '/login');
             exit;
         }
-
-        $selectedCompanyId = (int)($_SESSION['selected_company_id'] ?? 0);
-        $isWorkspaceRoute = strpos((string)($_SERVER['REQUEST_URI'] ?? ''), '/company/workspace') !== false;
-        if ($selectedCompanyId > 0 && !$isWorkspaceRoute && !(new CompanyModel())->isCompanyActive($selectedCompanyId)) {
-            unset($_SESSION['selected_company_id']);
-            $_SESSION['company_flash'] = 'The selected company is disabled. Choose an active company to continue.';
-            header('Location: ' . BASE_URL . '/company/workspace');
-            exit;
-        }
     }
 
     protected function requireSuperAdmin(): void
@@ -28,7 +19,7 @@ class BaseController extends Controller
         $this->requireAccess();
         $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
         if (!in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true)) {
-            $_SESSION['company_flash'] = 'This module is available to Super Admin accounts only.';
+            $_SESSION['company_flash'] = 'Super Admin access is required for this page.';
             $this->redirect('/');
         }
     }
@@ -42,38 +33,7 @@ class BaseController extends Controller
     {
         $this->requireAccess();
         $companyModel = new CompanyModel();
-        $moduleAliases = [$moduleKey];
-        if ($moduleKey === 'payroll') {
-            $moduleAliases[] = 'accounting';
-        }
-        if ($moduleKey === 'salary_structure') {
-            $moduleAliases[] = 'payroll';
-            $moduleAliases[] = 'accounting';
-        }
-
-        $hasCompanyAccess = false;
-        foreach (array_unique($moduleAliases) as $alias) {
-            if ($companyModel->hasModuleAccess($alias)) {
-                $hasCompanyAccess = true;
-                break;
-            }
-        }
-
-        if (!$hasCompanyAccess) {
-            $_SESSION['company_flash'] = 'This module is not enabled for the selected company.';
-            $this->redirect('/');
-        }
-
-        $hasEmployeeAccess = false;
-        foreach (array_unique($moduleAliases) as $alias) {
-            if ($companyModel->hasCurrentUserModuleAccess($alias)) {
-                $hasEmployeeAccess = true;
-                break;
-            }
-        }
-        $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
-        $isSuperAdmin = in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true);
-        if (!$isSuperAdmin && !$hasEmployeeAccess) {
+        if (!$companyModel->hasCurrentUserModuleAccess($moduleKey)) {
             $_SESSION['company_flash'] = 'This module is not enabled for your staff account.';
             $this->redirect('/');
         }

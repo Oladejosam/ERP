@@ -158,6 +158,12 @@ class CompanyModel extends Model
             'contract_admin' => 'Contract Admin',
             'reports' => 'Reports',
             'chat' => 'Team Chat',
+            'sales_marketing' => 'Sales & Marketing',
+            'quality_control' => 'Quality Control',
+            'workshop_maintenance' => 'Workshop & Maintenance',
+            'mix_design' => 'Mix Design',
+            'business_intelligence' => 'Business Intelligence',
+            'dispatch' => 'Dispatch Management',
         ];
     }
 

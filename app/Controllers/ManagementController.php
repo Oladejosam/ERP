@@ -55,10 +55,28 @@ class ManagementController extends BaseController
         ]);
     }
 
+    public function profile(): void
+    {
+        $this->requireAccess();
+        $user = $this->currentUser() ?? [];
+        $loginRoleName = $this->roleModel->getRoleNameById((int)($user['role_id'] ?? 0));
+        if ($loginRoleName !== '') {
+            $user['role_name'] = $loginRoleName;
+        }
+        $employeeId = (int)($user['employee_id'] ?? 0);
+        $employee = $employeeId > 0 ? $this->employeeModel->getEmployeeById($employeeId) : null;
+        $this->view('profile', [
+            'title' => 'My Profile',
+            'user' => $user,
+            'employee' => $employee,
+        ]);
+    }
+
     public function portalAdmin(): void
     {
         $this->requireAccess();
-        $this->view('portal/admin', ['title' => 'Admin Portal']);
+        $roleName = trim((string)($this->currentUser()['role_name'] ?? ''));
+        $this->view('portal/admin', ['title' => $roleName !== '' ? $roleName . ' Portal' : 'Admin Portal']);
     }
 
     public function portalHr(): void
@@ -209,6 +227,8 @@ class ManagementController extends BaseController
             'unassignedRoles' => $unassignedRoles,
             'modules' => array_diff_key(CompanyModel::availableModules(), ['dashboard' => true]),
             'access' => $this->companyModel->getRoleModuleAccessMap(),
+            'projects' => $this->projectModel->getProjectsForAccessManagement(),
+            'projectAccess' => $this->projectModel->getRoleProjectAccessMap(),
         ]);
     }
 
@@ -219,6 +239,10 @@ class ManagementController extends BaseController
         try {
             foreach ((array)($_POST['role_modules'] ?? []) as $roleId => $modules) {
                 $this->companyModel->saveRoleModuleAccess((int)$roleId, (array)$modules);
+            }
+            $roleProjects = (array)($_POST['role_projects'] ?? []);
+            foreach ((array)($_POST['role_modules'] ?? []) as $roleId => $modules) {
+                $this->projectModel->saveRoleProjectAccess((int)$roleId, (array)($roleProjects[$roleId] ?? []));
             }
             $_SESSION['employee_flash'] = 'Role module access saved successfully.';
         } catch (Throwable $exception) {
@@ -401,30 +425,35 @@ class ManagementController extends BaseController
 
     public function updateEmployeePhoto(): void
     {
-        $this->requireCompanyModule('employees');
+        $this->requireAccess();
         $employeeId = (int)($_POST['employee_id'] ?? 0);
+        $currentEmployeeId = (int)($_SESSION['user']['employee_id'] ?? 0);
+        $isOwnProfile = $employeeId > 0 && $employeeId === $currentEmployeeId;
+        if (!$isOwnProfile) {
+            $this->requireCompanyModule('employees');
+        }
         $employee = $this->employeeModel->getEmployeeById($employeeId);
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$employee) {
             $_SESSION['employee_flash'] = 'Invalid employee photo request.';
-            $this->redirect('/management/employees');
+            $this->redirect($isOwnProfile ? '/profile' : '/management/employees');
         }
 
         $file = $_FILES['profile_picture'] ?? null;
         if (!$file || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             $_SESSION['employee_flash'] = 'Please choose a profile picture to upload.';
-            $this->redirect('/management/employees/view?id=' . $employeeId);
+            $this->redirect($isOwnProfile ? '/profile' : '/management/employees/view?id=' . $employeeId);
         }
 
         $profilePicture = $this->handleEmployeePhotoUpload($file);
         if ($profilePicture === null) {
             $_SESSION['employee_flash'] = 'Profile picture must be a JPG, PNG, or WebP image.';
-            $this->redirect('/management/employees/view?id=' . $employeeId);
+            $this->redirect($isOwnProfile ? '/profile' : '/management/employees/view?id=' . $employeeId);
         }
 
         $this->employeeModel->updateEmployeeProfilePicture($employeeId, $profilePicture);
         $_SESSION['employee_flash'] = 'Profile picture updated successfully.';
-        $this->redirect('/management/employees/view?id=' . $employeeId);
+        $this->redirect($isOwnProfile ? '/profile' : '/management/employees/view?id=' . $employeeId);
     }
 
     public function loginAsEmployee(): void
@@ -1098,20 +1127,28 @@ class ManagementController extends BaseController
     {
         $this->requireCompanyModule('procurement');
         $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+        $currentRoleName = $this->roleModel->getRoleNameById((int)($_SESSION['user']['role_id'] ?? 0));
+        if ($currentRoleName !== '') {
+            $roleName = strtolower(trim($currentRoleName));
+            $_SESSION['user']['role_name'] = $currentRoleName;
+        }
         $isSuperAdmin = in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true);
+        $isLogisticsOfficer = strpos($roleName, 'logistics') !== false;
+        $isProcurementOfficer = strpos($roleName, 'procurement') !== false;
         $isStore = $this->isStoreDepartmentPersonnel();
-        $isHeadStore = $isStore && in_array($roleName, ['head store keeper', 'head store', 'hod store', 'hod of store', 'head of store'], true);
+        $isHeadStore = in_array($roleName, ['head store keeper', 'head store', 'hod store', 'hod of store', 'head of store'], true);
         $isLogistics = $this->isDepartmentPersonnel('logistics');
         $this->view('management/procurement', [
             'title' => 'Procurement',
             'suppliers' => $this->purchaseOrderModel->getSuppliers(),
             'projects' => $this->purchaseOrderModel->getProjects(),
-            'pendingOrders' => $isHeadStore || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('pending_head_approval') : [],
-            'flaggedOrders' => $isHeadStore || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('flagged') : [],
+            'pendingOrders' => $isHeadStore || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('pending_head_approval') : ($isProcurementOfficer ? $this->purchaseOrderModel->getWorkflowOrders('pending_procurement') : []),
+            'flaggedOrders' => $isHeadStore || $isProcurementOfficer || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('flagged') : [],
             'logisticsOrders' => $isLogistics || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('sent_to_logistics') : [],
             'canInitiatePurchaseOrder' => $isStore || $isSuperAdmin,
-            'canApprovePurchaseOrder' => $isHeadStore || $isSuperAdmin,
+            'canApprovePurchaseOrder' => $isHeadStore || $isProcurementOfficer || $isSuperAdmin,
             'canReceivePurchaseOrder' => $isLogistics || $isSuperAdmin,
+            'purchaseOrderDirectToProcurement' => $isHeadStore || $isSuperAdmin,
         ]);
     }
 
@@ -1123,8 +1160,14 @@ class ManagementController extends BaseController
             $this->redirect('/management/procurement');
         }
         try {
-            $this->purchaseOrderModel->createWorkflowOrder($_POST, (int)($_SESSION['user']['id'] ?? 0));
-            $_SESSION['procurement_flash'] = 'Purchase order sent to the Head Store Keeper for approval.';
+            $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
+            $isHeadStore = in_array($roleName, ['head store keeper', 'head store', 'hod store', 'hod of store', 'head of store'], true);
+            $isDirectToProcurement = $isHeadStore || in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true);
+            $initialStatus = $isDirectToProcurement ? 'pending_procurement' : 'pending_head_approval';
+            $this->purchaseOrderModel->createWorkflowOrder($_POST, (int)($_SESSION['user']['id'] ?? 0), $initialStatus);
+            $_SESSION['procurement_flash'] = $isHeadStore
+                ? 'Purchase order sent directly to the Procurement Officer for review.'
+                : 'Purchase order sent to the Head Store Keeper for approval.';
         } catch (Throwable $exception) {
             $_SESSION['procurement_flash'] = 'Unable to initiate purchase order: ' . $exception->getMessage();
         }
@@ -1135,17 +1178,58 @@ class ManagementController extends BaseController
     {
         $this->requireCompanyModule('procurement');
         $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
-        if (!in_array($roleName, ['head store keeper', 'head store', 'hod store', 'hod of store', 'head of store', 'super admin', 'superadministrator', 'super administrator'], true)) {
-            $_SESSION['procurement_flash'] = 'Only the Head Store Keeper can decide on purchase orders.';
+        if (!in_array($roleName, ['head store keeper', 'head store', 'hod store', 'hod of store', 'head of store', 'procurement officer', 'procurement', 'super admin', 'superadministrator', 'super administrator'], true) && strpos($roleName, 'procurement') === false) {
+            $_SESSION['procurement_flash'] = 'Only the Head Store Keeper or Procurement Officer can decide on purchase orders.';
             $this->redirect('/management/procurement');
         }
         try {
-            $this->purchaseOrderModel->decideWorkflowOrder((int)($_POST['purchase_order_id'] ?? 0), (int)($_SESSION['user']['id'] ?? 0), (string)($_POST['decision'] ?? ''), (string)($_POST['reason'] ?? ''));
+            $isHeadStoreReviewer = in_array($roleName, ['head store keeper', 'head store', 'hod store', 'hod of store', 'head of store'], true);
+            $this->purchaseOrderModel->decideWorkflowOrder((int)($_POST['purchase_order_id'] ?? 0), (int)($_SESSION['user']['id'] ?? 0), (string)($_POST['decision'] ?? ''), (string)($_POST['reason'] ?? ''), $isHeadStoreReviewer);
             $_SESSION['procurement_flash'] = 'Purchase order decision recorded.';
         } catch (Throwable $exception) {
             $_SESSION['procurement_flash'] = 'Unable to decide purchase order: ' . $exception->getMessage();
         }
         $this->redirect('/management/procurement');
+    }
+
+    public function receivePurchaseOrderForm(): void
+    {
+        $this->requireCompanyModule('procurement');
+        $order = $this->purchaseOrderModel->getReceivablePurchaseOrder((int)($_GET['id'] ?? 0));
+        if (!$order) {
+            $_SESSION['procurement_flash'] = 'Purchase order is not available for receiving.';
+            $this->redirect('/management/procurement');
+        }
+        $this->view('management/purchase_order_receive', [
+            'title' => 'Receive Purchase Order',
+            'order' => $order,
+            'inventoryItems' => $this->inventoryModel->getItems(),
+        ]);
+    }
+
+    public function receivePurchaseOrder(): void
+    {
+        $this->requireCompanyModule('procurement');
+        $orderId = (int)($_POST['purchase_order_id'] ?? 0);
+        try {
+            $receiptId = $this->purchaseOrderModel->receivePurchaseOrder($orderId, (int)($_SESSION['user']['id'] ?? 0), (array)($_POST['items'] ?? []));
+            $_SESSION['procurement_flash'] = 'Goods received and inventory updated.';
+            $this->redirect('/management/procurement/receipt?id=' . $receiptId);
+        } catch (Throwable $exception) {
+            $_SESSION['procurement_flash'] = 'Unable to receive purchase order: ' . $exception->getMessage();
+            $this->redirect('/management/procurement/receive?id=' . $orderId);
+        }
+    }
+
+    public function printInventoryReceipt(): void
+    {
+        $this->requireCompanyModule('procurement');
+        $receipt = $this->purchaseOrderModel->getReceipt((int)($_GET['id'] ?? 0));
+        if (!$receipt) {
+            $_SESSION['procurement_flash'] = 'Receiving order not found.';
+            $this->redirect('/management/procurement');
+        }
+        $this->view('management/inventory_receipt', ['title' => 'Goods Received Note', 'receipt' => $receipt]);
     }
 
     private function isDepartmentPersonnel(string $departmentName): bool
@@ -1202,17 +1286,43 @@ class ManagementController extends BaseController
             $this->redirect('/requisition');
         }
         try {
-            $this->requisitionModel->decideDispatch(
+            $deliveryNoteId = $this->requisitionModel->decideDispatch(
                 (int)($_POST['dispatch_id'] ?? 0),
                 (int)($_SESSION['user']['id'] ?? 0),
                 (string)($_POST['stock_type'] ?? ''),
-                !empty($_POST['urgent'])
+                !empty($_POST['urgent']),
+                (string)($_POST['issued_to'] ?? '')
             );
             $_SESSION['requisition_flash'] = 'Store decision recorded successfully.';
+            $_SESSION['delivery_note_id'] = $deliveryNoteId;
         } catch (Throwable $exception) {
             $_SESSION['requisition_flash'] = 'Unable to process store request: ' . $exception->getMessage();
         }
         $this->redirect('/requisition');
+    }
+
+    public function printDeliveryNote(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $note = $this->requisitionModel->getDeliveryNote((int)($_GET['id'] ?? 0));
+        if (!$note) {
+            $_SESSION['requisition_flash'] = 'Delivery note not found.';
+            $this->redirect('/requisition');
+        }
+        $this->view('requisition/delivery_note', ['title' => 'Delivery Note', 'note' => $note]);
+    }
+
+    public function decideRequisitionHandoff(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $requisitionId = (int)($_POST['requisition_id'] ?? 0);
+        try {
+            $this->requisitionModel->decideHandoff($requisitionId, (int)($_SESSION['user']['id'] ?? 0), (string)($_POST['decision'] ?? ''), (string)($_POST['reason'] ?? ''));
+            $_SESSION['requisition_flash'] = 'Forwarded requisition decision saved.';
+        } catch (Throwable $exception) {
+            $_SESSION['requisition_flash'] = 'Unable to save forwarded requisition decision: ' . $exception->getMessage();
+        }
+        $this->redirect('/requisition/view?id=' . $requisitionId);
     }
 
     private function isStoreDepartmentPersonnel(): bool
@@ -1272,11 +1382,26 @@ class ManagementController extends BaseController
         }
         $roleName = strtolower(trim((string)($_SESSION['user']['role_name'] ?? '')));
         $isSuperAdmin = in_array($roleName, ['super admin', 'superadministrator', 'super administrator'], true);
+        $isLogisticsOfficer = strpos($roleName, 'logistics') !== false;
+        $isHeadStore = in_array($roleName, ['head store keeper', 'head store', 'hod store', 'hod of store', 'head of store'], true);
         if (!$isSuperAdmin && !$this->requisitionModel->isParticipant((int)$requisition['id'], (int)($_SESSION['user']['id'] ?? 0))) {
             $_SESSION['requisition_flash'] = 'You are not part of this requisition discussion.';
             $this->redirect('/requisition');
         }
-        $this->view('requisition/detail', ['title' => 'Requisition Discussion', 'requisition' => $requisition, 'companyUsers' => $this->requisitionModel->getCompanyUsers()]);
+        $this->view('requisition/detail', ['title' => 'Requisition Discussion', 'requisition' => $requisition, 'companyUsers' => $this->requisitionModel->getCompanyUsers(), 'isLogisticsOfficer' => $isLogisticsOfficer || $isSuperAdmin, 'isHeadStoreReviewer' => $isHeadStore || $isSuperAdmin]);
+    }
+
+    public function reviewRequisitionInventory(): void
+    {
+        $this->requireCompanyModule('requisition');
+        $requisitionId = (int)($_POST['requisition_id'] ?? 0);
+        try {
+            $this->requisitionModel->reviewInventory($requisitionId, (int)($_SESSION['user']['id'] ?? 0), (array)($_POST['items'] ?? []));
+            $_SESSION['requisition_flash'] = 'Inventory quantities and purchase requirements updated.';
+        } catch (Throwable $exception) {
+            $_SESSION['requisition_flash'] = 'Unable to complete inventory review: ' . $exception->getMessage();
+        }
+        $this->redirect('/requisition/view?id=' . $requisitionId);
     }
 
     public function adjustRequisitionItemQuantity(): void

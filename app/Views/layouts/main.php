@@ -92,11 +92,13 @@ function isActiveNav(string $href, string $currentPath): bool {
             <span class="badge bg-success-subtle text-success px-2 py-2"><?php echo htmlspecialchars($roleName !== '' ? $roleName : 'User'); ?></span>
             <?php if ($chatUnreadCount > 0): ?><a class="text-white text-decoration-none position-relative" href="/ERP/public/modules/chat" title="Unread chat messages"><i class="bi bi-chat-dots fs-5"></i><span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"><?php echo $chatUnreadCount > 99 ? '99+' : $chatUnreadCount; ?></span><span class="visually-hidden">Unread chat messages</span></a><?php endif; ?>
             <div class="d-flex align-items-center gap-2">
-                <i class="bi bi-person-circle fs-4"></i>
-                <div>
+                <a class="text-white text-decoration-none d-flex align-items-center gap-2" href="/ERP/public/profile" title="View my profile">
+                    <i class="bi bi-person-circle fs-4"></i>
+                    <div>
                     <div class="fw-semibold"><?php echo htmlspecialchars($currentUser['name'] ?? 'Guest'); ?></div>
                     <small class="text-white-50">Portal User</small>
-                </div>
+                    </div>
+                </a>
             </div>
         </div>
     </nav>
@@ -132,6 +134,9 @@ function isActiveNav(string $href, string $currentPath): bool {
                         <?php if ($companyModel->hasCurrentUserModuleAccess('projects')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/projects', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/projects"><i class="bi bi-kanban me-2"></i>Project</a></li><?php endif; ?>
                         <?php if ($companyModel->hasCurrentUserModuleAccess('contract_admin')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/contract-admin', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/contract-admin"><i class="bi bi-file-earmark-check me-2"></i>Contract Admin</a></li><?php endif; ?>
                         <?php if ($companyModel->hasCurrentUserModuleAccess('chat')): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/chat', $currentPath) ? ' active' : ''; ?>" href="/ERP/public/modules/chat"><i class="bi bi-chat-dots me-2"></i>Team Chat</a></li><?php endif; ?>
+                        <?php foreach (['sales_marketing' => 'Sales & Marketing', 'quality_control' => 'Quality Control', 'workshop_maintenance' => 'Workshop & Maintenance', 'mix_design' => 'Mix Design', 'dispatch' => 'Dispatch Management', 'business_intelligence' => 'Business Intelligence'] as $rmcKey => $rmcLabel): ?>
+                            <?php if ($companyModel->hasCurrentUserModuleAccess($rmcKey)): ?><li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/rmc', $currentPath) && (string)($_GET['module'] ?? '') === $rmcKey ? ' active' : ''; ?>" href="/ERP/public/modules/rmc?module=<?php echo urlencode($rmcKey); ?>"><i class="bi bi-kanban me-2"></i><?php echo htmlspecialchars($rmcLabel); ?></a></li><?php endif; ?>
+                        <?php endforeach; ?>
                         <?php foreach ($companyModel->getCustomModulesForCompany((int)($_SESSION['selected_company_id'] ?? 1)) as $customModule): ?>
                             <?php $customKey = (string)$customModule['module_key']; if (!$companyModel->hasCurrentUserModuleAccess($customKey)) { continue; } ?>
                             <li><a class="nav-link<?php echo isActiveNav('/ERP/public/modules/custom', $currentPath) && (string)($_GET['module'] ?? '') === $customKey ? ' active' : ''; ?>" href="/ERP/public/modules/custom?module=<?php echo urlencode($customKey); ?>"><i class="bi bi-puzzle me-2"></i><?php echo htmlspecialchars((string)$customModule['module_name']); ?></a></li>

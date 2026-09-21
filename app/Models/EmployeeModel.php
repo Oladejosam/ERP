@@ -121,9 +121,22 @@ class EmployeeModel extends Model
         $this->query('INSERT IGNORE INTO departments (company_id, name) SELECT DISTINCT company_id, department FROM employees WHERE department IS NOT NULL AND department <> ""');
     }
 
-    public function getEmployees(): array
+    public function getEmployees(?string $search = null, ?string $status = null): array
     {
-        $stmt = $this->query('SELECT e.*, r.name AS role_name FROM employees e LEFT JOIN users u ON u.employee_id = e.id AND (u.company_id = e.company_id OR u.company_id IS NULL) LEFT JOIN roles r ON r.id = u.role_id WHERE e.company_id = ? ORDER BY e.created_at DESC, e.id DESC', [$this->currentCompanyId()]);
+        $conditions = ['e.company_id = ?'];
+        $params = [$this->currentCompanyId()];
+        $search = trim((string)$search);
+        $status = trim((string)$status);
+        if ($search !== '') {
+            $conditions[] = '(CAST(e.id AS CHAR) LIKE ? OR e.employee_code LIKE ? OR CONCAT(e.first_name, " ", e.last_name) LIKE ? OR e.first_name LIKE ? OR e.last_name LIKE ? OR e.position LIKE ? OR e.designation LIKE ? OR e.department LIKE ? OR e.email LIKE ? OR e.phone LIKE ?)';
+            $searchTerm = '%' . $search . '%';
+            $params = array_merge($params, array_fill(0, 10, $searchTerm));
+        }
+        if (in_array($status, ['active', 'inactive', 'terminated'], true)) {
+            $conditions[] = 'e.status = ?';
+            $params[] = $status;
+        }
+        $stmt = $this->query('SELECT e.*, r.name AS role_name FROM employees e LEFT JOIN users u ON u.employee_id = e.id AND (u.company_id = e.company_id OR u.company_id IS NULL) LEFT JOIN roles r ON r.id = u.role_id WHERE ' . implode(' AND ', $conditions) . ' ORDER BY e.created_at DESC, e.id DESC', $params);
         return $stmt->fetchAll();
     }
 

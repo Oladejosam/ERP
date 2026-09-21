@@ -43,7 +43,7 @@
             <div class="modal-body"><div class="row g-3">
                 <div class="col-md-6"><label class="form-label">Project Number</label><input class="form-control" name="project_number" placeholder="PRJ-001" required></div>
                 <div class="col-md-6"><label class="form-label">Project Name</label><input class="form-control" name="name" required></div>
-                <div class="col-md-6"><label class="form-label">Client Name</label><input class="form-control" name="client_name"></div>
+                <div class="col-md-6"><label class="form-label" for="projectClient">Client</label><div class="input-group"><select class="form-select" id="projectClient" name="client_id" required><option value="">Select customer</option><?php foreach ($customers as $customer): ?><option value="<?php echo (int)$customer['id']; ?>"><?php echo htmlspecialchars($customer['company_name']); ?></option><?php endforeach; ?></select><button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#newProjectClientModal" title="Create new client" aria-label="Create new client"><i class="bi bi-plus-lg"></i></button></div></div>
                 <div class="col-md-6"><label class="form-label">Consultant</label><input class="form-control" name="consultant"></div>
                 <div class="col-md-6"><label class="form-label">Contract Value</label><input class="form-control" type="number" min="0" step="0.01" name="contract_value" value="0"></div>
                 <div class="col-md-6"><label class="form-label">Budget</label><input class="form-control" type="number" min="0" step="0.01" name="budget" value="0"></div>
@@ -59,7 +59,46 @@
     </div></div>
 </div>
 
+<div class="modal fade" id="newProjectClientModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Create New Client</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <form id="newProjectClientForm" method="post" action="/ERP/public/projects/customers/create">
+            <div class="modal-body"><div id="newProjectClientMessage" class="alert d-none" role="alert"></div><div class="row g-3">
+                <div class="col-12"><label class="form-label" for="newClientCompanyName">Client name</label><input class="form-control" id="newClientCompanyName" name="company_name" maxlength="150" required></div>
+                <div class="col-12"><label class="form-label" for="newClientContactPerson">Contact person</label><input class="form-control" id="newClientContactPerson" name="contact_person" maxlength="150" required></div>
+                <div class="col-md-6"><label class="form-label" for="newClientEmail">Email</label><input class="form-control" id="newClientEmail" type="email" name="email" maxlength="150" required></div>
+                <div class="col-md-6"><label class="form-label" for="newClientPhone">Phone</label><input class="form-control" id="newClientPhone" name="phone" maxlength="30" required></div>
+                <div class="col-12"><label class="form-label" for="newClientAddress">Address</label><textarea class="form-control" id="newClientAddress" name="address" rows="2"></textarea></div>
+            </div></div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" type="submit"><i class="bi bi-person-plus me-1"></i>Create client</button></div>
+        </form>
+    </div></div>
+</div>
+
 <script>
+    document.getElementById('newProjectClientForm')?.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const message = document.getElementById('newProjectClientMessage');
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        message.className = 'alert d-none';
+        try {
+            const response = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'Accept': 'application/json' } });
+            const result = await response.json();
+            if (!result.success) throw new Error(result.message || 'Unable to create client.');
+            const customer = result.customer;
+            const clientSelect = document.getElementById('projectClient');
+            clientSelect.add(new Option(customer.company_name, customer.id, true, true));
+            form.reset();
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('newProjectClientModal')).hide();
+        } catch (error) {
+            message.textContent = error.message;
+            message.className = 'alert alert-danger';
+        } finally {
+            submitButton.disabled = false;
+        }
+    });
     document.getElementById('addProjectDocument')?.addEventListener('click', function () {
         const container = document.getElementById('projectDocuments');
         const row = container.querySelector('.project-document-row').cloneNode(true);

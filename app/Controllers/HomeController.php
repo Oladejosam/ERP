@@ -5,66 +5,34 @@
 declare(strict_types=1);
 
 require_once APP_ROOT . '/app/Controllers/BaseController.php';
-require_once APP_ROOT . '/app/Models/CompanyModel.php';
-require_once APP_ROOT . '/app/Models/RequisitionModel.php';
-require_once APP_ROOT . '/app/Models/ProjectModel.php';
-require_once APP_ROOT . '/app/Models/EmployeeModel.php';
 
 class HomeController extends BaseController
 {
     public function index(): void
     {
-        $companySettings = (new CompanyModel())->getSettings();
-        if (trim((string)($companySettings['company_name'] ?? '')) === '') {
-            $this->redirect('/setup');
-        }
-
         $this->requireAccess();
-        $currentUser = $this->currentUser() ?? [];
-        $employee = (new EmployeeModel())->getEmployeeById((int)($currentUser['employee_id'] ?? 0));
-        $projectModel = new ProjectModel();
-        if ($projectModel->getQuantitySurveyorProjects((int)($_SESSION['user']['employee_id'] ?? 0)) !== []) {
-            $this->redirect('/portal/site-quantity-surveyor');
-        }
         $portalRoute = $this->portalRouteForRole();
         if ($portalRoute !== '/') {
             $this->redirect($portalRoute);
         }
 
         $pdo = Database::getInstance();
-        $companyId = max(1, (int)($_SESSION['selected_company_id'] ?? 1));
-        $employeeStmt = $pdo->prepare('SELECT COUNT(*) FROM employees WHERE company_id = ?');
-        $employeeStmt->execute([$companyId]);
-        $employees = (int)$employeeStmt->fetchColumn();
-        $inventoryStmt = $pdo->prepare('SELECT COUNT(*) FROM inventory_items WHERE company_id = ?');
-        $inventoryStmt->execute([$companyId]);
-        $inventoryItems = (int)$inventoryStmt->fetchColumn();
-        $invoiceStmt = $pdo->prepare('SELECT COALESCE(SUM(total_amount), 0) FROM invoices WHERE company_id = ?');
-        $invoiceStmt->execute([$companyId]);
-        $invoiceTotal = (float)$invoiceStmt->fetchColumn();
-        $purchaseStmt = $pdo->prepare('SELECT COALESCE(SUM(total_amount), 0) FROM purchase_orders WHERE company_id = ?');
-        $purchaseStmt->execute([$companyId]);
-        $purchaseTotal = (float)$purchaseStmt->fetchColumn();
-        $requisitionModel = new RequisitionModel();
-        $currentUserId = (int)($_SESSION['user']['id'] ?? 0);
-        $taggedRequisitions = $requisitionModel->getPendingTaggedForUser($currentUserId);
-        $recentActivities = $requisitionModel->getRecentActivityForUser($currentUserId);
+        $projects = (int)$pdo->query('SELECT COUNT(*) FROM projects')->fetchColumn();
+        $employees = (int)$pdo->query('SELECT COUNT(*) FROM employees')->fetchColumn();
+        $inventoryItems = (int)$pdo->query('SELECT COUNT(*) FROM inventory_items')->fetchColumn();
+        $invoiceTotal = (float)$pdo->query('SELECT COALESCE(SUM(total_amount), 0) FROM invoices')->fetchColumn();
+        $purchaseTotal = (float)$pdo->query('SELECT COALESCE(SUM(total_amount), 0) FROM purchase_orders')->fetchColumn();
+        $projectBudgetTotal = (float)$pdo->query('SELECT COALESCE(SUM(budget), 0) FROM projects')->fetchColumn();
 
         $this->view('dashboard/index', [
             'title' => 'Dashboard',
-            'companyName' => (string)($companySettings['company_name'] ?? ''),
-            'currentUserName' => (string)($currentUser['name'] ?? 'User'),
-            'currentUserRole' => (string)($currentUser['role_name'] ?? 'User'),
-            'currentUserDesignation' => trim((string)($employee['designation'] ?? '')) !== ''
-                ? (string)$employee['designation']
-                : (string)($employee['position'] ?? 'Not specified'),
+            'projects' => $projects,
             'employees' => $employees,
             'inventory_items' => $inventoryItems,
             'revenue' => $invoiceTotal,
             'expenses' => $purchaseTotal,
             'profit' => max(0.0, $invoiceTotal - $purchaseTotal),
-            'taggedRequisitions' => $taggedRequisitions,
-            'recentActivities' => $recentActivities,
+            'project_budget_total' => $projectBudgetTotal,
         ]);
     }
 
@@ -88,6 +56,9 @@ class HomeController extends BaseController
         }
         if ($roleName === 'hr manager' || $roleName === 'hr_manager') {
             return '/portal/hr-manager';
+        }
+        if ($roleName === 'project manager' || $roleName === 'project_manager') {
+            return '/portal/project-manager';
         }
         if ($roleName === 'site engineer' || $roleName === 'site_engineer') {
             return '/portal/site-engineer';
