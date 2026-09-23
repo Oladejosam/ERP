@@ -11,7 +11,6 @@
         <div class="row g-3">
             <div class="col-md-6 col-xl-4"><a class="btn btn-primary w-100 py-3" href="/ERP/public/requisition"><i class="bi bi-file-earmark-plus me-2"></i>Raise site requisition</a></div>
             <div class="col-md-6 col-xl-4"><a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/requisition"><i class="bi bi-list-check me-2"></i>Track requisitions</a></div>
-            <div class="col-md-6 col-xl-4"><a class="btn btn-outline-secondary w-100 py-3" href="/ERP/public/modules/projects"><i class="bi bi-kanban me-2"></i>View projects</a></div>
         </div>
     </div>
 </div>

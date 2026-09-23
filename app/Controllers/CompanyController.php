@@ -34,7 +34,7 @@ class CompanyController extends BaseController
             return;
         }
         $this->companyModel->saveModuleAccess($companyId, (array)($_POST['modules'] ?? []));
-        $this->redirect('/');
+        $this->redirect('/dashboard');
     }
 
     public function setActive(): void

@@ -136,6 +136,121 @@ class ProjectModel extends Model
             )'
         );
         $this->query(
+            'CREATE TABLE IF NOT EXISTS project_daily_progress (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                project_id INT NOT NULL,
+                schedule_id INT NULL,
+                report_date DATE NOT NULL,
+                progress_percent INT NOT NULL DEFAULT 0,
+                activities_completed TEXT NULL,
+                manpower_count INT NOT NULL DEFAULT 0,
+                weather_condition VARCHAR(100) NULL,
+                site_condition VARCHAR(100) NULL,
+                remarks TEXT NULL,
+                created_by INT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )'
+        );
+        $this->query('ALTER TABLE project_daily_progress ADD COLUMN IF NOT EXISTS schedule_id INT NULL');
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS project_delay_logs (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                project_id INT NOT NULL,
+                schedule_id INT NOT NULL,
+                delay_date DATE NOT NULL,
+                delay_days INT NOT NULL,
+                reason VARCHAR(180) NOT NULL,
+                details TEXT NULL,
+                created_by INT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY (schedule_id) REFERENCES project_schedule(id) ON DELETE CASCADE
+            )'
+        );
+        $this->query('ALTER TABLE project_delay_logs ADD COLUMN IF NOT EXISTS company_id INT NULL AFTER id');
+        $this->query('ALTER TABLE project_delay_logs ADD COLUMN IF NOT EXISTS schedule_id INT NULL AFTER project_id');
+        $this->query('ALTER TABLE project_delay_logs ADD COLUMN IF NOT EXISTS delay_date DATE NULL AFTER schedule_id');
+        $this->query('ALTER TABLE project_delay_logs ADD COLUMN IF NOT EXISTS delay_days INT NOT NULL DEFAULT 0 AFTER delay_date');
+        $this->query('ALTER TABLE project_delay_logs ADD COLUMN IF NOT EXISTS reason VARCHAR(180) NULL AFTER delay_days');
+        $this->query('ALTER TABLE project_delay_logs ADD COLUMN IF NOT EXISTS details TEXT NULL AFTER reason');
+        $this->query('ALTER TABLE project_delay_logs ADD COLUMN IF NOT EXISTS log_date DATE NULL AFTER project_id');
+        $this->query('ALTER TABLE project_delay_logs ADD COLUMN IF NOT EXISTS title VARCHAR(150) NULL AFTER log_date');
+        $this->query('ALTER TABLE project_delay_logs ADD COLUMN IF NOT EXISTS description TEXT NULL AFTER title');
+        $this->query('ALTER TABLE project_delay_logs ADD COLUMN IF NOT EXISTS impact_days INT NULL AFTER description');
+        $this->query('UPDATE project_delay_logs SET delay_date = COALESCE(delay_date, log_date), delay_days = CASE WHEN delay_days = 0 THEN COALESCE(impact_days, 0) ELSE delay_days END, reason = COALESCE(NULLIF(reason, ""), title), details = COALESCE(details, description) WHERE delay_date IS NULL OR reason IS NULL');
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS project_change_orders (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                project_id INT NOT NULL,
+                change_order_no VARCHAR(80) NOT NULL,
+                title VARCHAR(180) NOT NULL,
+                description TEXT NULL,
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                effective_date DATE NULL,
+                status ENUM("draft","pending_approval","approved","rejected","applied") NOT NULL DEFAULT "draft",
+                created_by INT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS project_safety_logs (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                project_id INT NOT NULL,
+                log_no VARCHAR(80) NOT NULL,
+                title VARCHAR(180) NOT NULL,
+                category VARCHAR(80) NOT NULL DEFAULT "safety",
+                severity VARCHAR(30) NOT NULL DEFAULT "medium",
+                incident_date DATE NULL,
+                status ENUM("open","under_review","resolved","closed") NOT NULL DEFAULT "open",
+                notes TEXT NULL,
+                created_by INT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS project_rfis (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                project_id INT NOT NULL,
+                rfi_no VARCHAR(80) NOT NULL,
+                title VARCHAR(180) NOT NULL,
+                drawing_ref VARCHAR(150) NULL,
+                description TEXT NULL,
+                issued_by VARCHAR(150) NULL,
+                due_date DATE NULL,
+                status ENUM("draft","submitted","under_review","approved","rejected","closed") NOT NULL DEFAULT "draft",
+                response TEXT NULL,
+                created_by INT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS project_productivity (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                project_id INT NOT NULL,
+                report_date DATE NOT NULL,
+                trade VARCHAR(100) NOT NULL,
+                crew_size INT NOT NULL DEFAULT 0,
+                planned_output DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                actual_output DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                unit_of_measure VARCHAR(50) NOT NULL DEFAULT "m2",
+                notes TEXT NULL,
+                created_by INT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )'
+        );
+        $this->query(
             'CREATE TABLE IF NOT EXISTS role_project_access (
                 company_id INT NOT NULL,
                 role_id INT NOT NULL,
@@ -264,6 +379,319 @@ class ProjectModel extends Model
             'SELECT * FROM project_schedule WHERE project_id = ? AND company_id = ? ORDER BY start_date ASC, end_date ASC, id ASC',
             [$projectId, $this->currentCompanyId()]
         )->fetchAll();
+    }
+
+    public function getProjectDailyProgress(int $projectId): array
+    {
+        return $this->query(
+            'SELECT d.*, s.task_name FROM project_daily_progress d LEFT JOIN project_schedule s ON s.id = d.schedule_id AND s.company_id = d.company_id WHERE d.project_id = ? AND d.company_id = ? ORDER BY d.report_date DESC, d.created_at DESC, d.id DESC',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function getProjectDelayLogs(int $projectId): array
+    {
+        return $this->query(
+            'SELECT l.*, s.task_name FROM project_delay_logs l LEFT JOIN project_schedule s ON s.id = l.schedule_id AND s.company_id = ? WHERE l.project_id = ? AND (l.company_id = ? OR l.company_id IS NULL) ORDER BY l.delay_date DESC, l.created_at DESC, l.id DESC',
+            [$this->currentCompanyId(), $projectId, $this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function addProjectDailyProgress(int $projectId, array $data): int
+    {
+        if (!$this->getProjectById($projectId)) {
+            throw new InvalidArgumentException('Project not found.');
+        }
+
+        $reportDate = trim((string)($data['report_date'] ?? '')) ?: date('Y-m-d');
+        $progressPercent = max(0, min(100, (int)($data['progress_percent'] ?? 0)));
+        $scheduleId = (int)($data['schedule_id'] ?? 0);
+        $activitiesCompleted = trim((string)($data['activities_completed'] ?? ''));
+        $manpowerCount = max(0, (int)($data['manpower_count'] ?? 0));
+        $weatherCondition = trim((string)($data['weather_condition'] ?? '')) ?: 'Normal';
+        $siteCondition = trim((string)($data['site_condition'] ?? '')) ?: 'Stable';
+        $remarks = trim((string)($data['remarks'] ?? ''));
+
+        if ($scheduleId > 0) {
+            $schedule = $this->query('SELECT id FROM project_schedule WHERE id = ? AND project_id = ? AND company_id = ? LIMIT 1', [$scheduleId, $projectId, $this->currentCompanyId()])->fetch();
+            if (!$schedule) {
+                throw new InvalidArgumentException('The selected schedule task was not found.');
+            }
+        } else {
+            $schedule = null;
+        }
+
+        $delayDays = max(0, (int)($data['delay_days'] ?? 0));
+        $delayReason = trim((string)($data['delay_reason'] ?? ''));
+        $delayDetails = trim((string)($data['delay_details'] ?? ''));
+        if ($delayDays > 0 && (!$schedule || $delayReason === '')) {
+            throw new InvalidArgumentException('Select the affected task and provide a delay reason before rescheduling.');
+        }
+
+        $this->query(
+            'INSERT INTO project_daily_progress (company_id, project_id, schedule_id, report_date, progress_percent, activities_completed, manpower_count, weather_condition, site_condition, remarks, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$this->currentCompanyId(), $projectId, $scheduleId > 0 ? $scheduleId : null, $reportDate, $progressPercent, $activitiesCompleted !== '' ? $activitiesCompleted : null, $manpowerCount, $weatherCondition, $siteCondition, $remarks !== '' ? $remarks : null, (int)($_SESSION['user']['id'] ?? 0) ?: null]
+        );
+
+        if ($scheduleId > 0) {
+            $this->query('UPDATE project_schedule SET progress_percent = ?, status = ? WHERE id = ? AND project_id = ? AND company_id = ?', [$progressPercent, $progressPercent >= 100 ? 'completed' : ($progressPercent > 0 ? 'in_progress' : 'planned'), $scheduleId, $projectId, $this->currentCompanyId()]);
+        }
+        if ($delayDays > 0) {
+            $this->query('UPDATE project_schedule SET start_date = DATE_ADD(start_date, INTERVAL ' . $delayDays . ' DAY), end_date = DATE_ADD(end_date, INTERVAL ' . $delayDays . ' DAY) WHERE id = ? AND project_id = ? AND company_id = ?', [$scheduleId, $projectId, $this->currentCompanyId()]);
+            $this->query('INSERT INTO project_delay_logs (company_id, project_id, schedule_id, delay_date, delay_days, reason, details, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [$this->currentCompanyId(), $projectId, $scheduleId, $reportDate, $delayDays, $delayReason, $delayDetails !== '' ? $delayDetails : null, (int)($_SESSION['user']['id'] ?? 0) ?: null]);
+        }
+
+        $this->updateProjectProgressPercent($projectId);
+
+        return (int)$this->db->lastInsertId();
+    }
+
+    public function updateProjectProgressPercent(int $projectId): void
+    {
+        $project = $this->getProjectById($projectId);
+        if (!$project) {
+            return;
+        }
+
+        $latestProgress = $this->query(
+            'SELECT progress_percent FROM project_daily_progress WHERE project_id = ? AND company_id = ? ORDER BY report_date DESC, created_at DESC LIMIT 1',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchColumn();
+
+        $targetProgress = $latestProgress !== false ? max(0, min(100, (int)$latestProgress)) : (int)($project['progress_percent'] ?? 0);
+
+        $this->refreshProjectProgress($projectId);
+    }
+
+    public function getProjectChangeOrders(int $projectId): array
+    {
+        return $this->query(
+            'SELECT * FROM project_change_orders WHERE project_id = ? AND company_id = ? ORDER BY created_at DESC, id DESC',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function addProjectChangeOrder(int $projectId, array $data): int
+    {
+        if (!$this->getProjectById($projectId)) {
+            throw new InvalidArgumentException('Project not found.');
+        }
+
+        $changeOrderNo = trim((string)($data['change_order_no'] ?? '')) ?: 'CO-' . date('YmdHis');
+        $title = trim((string)($data['title'] ?? ''));
+        $description = trim((string)($data['description'] ?? ''));
+        $amount = (float)($data['amount'] ?? 0);
+        $effectiveDate = trim((string)($data['effective_date'] ?? ''));
+        $status = in_array(trim((string)($data['status'] ?? 'pending_approval')), ['draft', 'pending_approval', 'approved', 'rejected', 'applied'], true)
+            ? trim((string)($data['status'] ?? 'pending_approval'))
+            : 'pending_approval';
+
+        if ($title === '') {
+            throw new InvalidArgumentException('A change order title is required.');
+        }
+
+        $this->query(
+            'INSERT INTO project_change_orders (company_id, project_id, change_order_no, title, description, amount, effective_date, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$this->currentCompanyId(), $projectId, $changeOrderNo, $title, $description, $amount, $effectiveDate !== '' ? $effectiveDate : null, $status, (int)($_SESSION['user']['id'] ?? 0) ?: null]
+        );
+        return (int)$this->db->lastInsertId();
+    }
+
+    public function updateProjectChangeOrderStatus(int $projectId, int $changeOrderId, string $status): void
+    {
+        $status = in_array($status, ['draft', 'pending_approval', 'approved', 'rejected', 'applied'], true) ? $status : 'pending_approval';
+        $this->query(
+            'UPDATE project_change_orders SET status = ? WHERE id = ? AND project_id = ? AND company_id = ? LIMIT 1',
+            [$status, $changeOrderId, $projectId, $this->currentCompanyId()]
+        );
+    }
+
+    public function getProjectCostSummary(int $projectId): array
+    {
+        $project = $this->getProjectById($projectId);
+        if (!$project) {
+            return [
+                'budget' => 0.0,
+                'contract_value' => 0.0,
+                'approved_change_orders' => 0.0,
+                'projected_total' => 0.0,
+                'revised_contract_value' => 0.0,
+                'variance' => 0.0,
+                'committed_budget' => 0.0,
+                'remaining_budget' => 0.0,
+                'budget_utilization_percent' => 0.0,
+            ];
+        }
+
+        $approvedChanges = (float)$this->query(
+            'SELECT COALESCE(SUM(amount), 0) FROM project_change_orders WHERE project_id = ? AND company_id = ? AND status IN ("approved", "applied")',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchColumn();
+
+        $committedBudget = (float)$this->query(
+            'SELECT COALESCE(SUM(total_cost), 0) FROM project_budgets WHERE project_id = ? AND company_id = ? AND deleted_at IS NULL',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchColumn();
+
+        $budget = (float)($project['budget'] ?? 0);
+        $contractValue = (float)($project['contract_value'] ?? 0);
+        $projectedTotal = $contractValue + $approvedChanges;
+        $variance = $budget - $projectedTotal;
+        $remainingBudget = $budget - $committedBudget;
+        $budgetUtilization = $budget > 0 ? ($committedBudget / $budget) * 100 : 0;
+
+        return [
+            'budget' => $budget,
+            'contract_value' => $contractValue,
+            'approved_change_orders' => $approvedChanges,
+            'projected_total' => $projectedTotal,
+            'revised_contract_value' => $projectedTotal,
+            'variance' => $variance,
+            'committed_budget' => $committedBudget,
+            'remaining_budget' => $remainingBudget,
+            'budget_utilization_percent' => $budgetUtilization,
+        ];
+    }
+
+    public function getProjectSafetyLogs(int $projectId): array
+    {
+        return $this->query(
+            'SELECT * FROM project_safety_logs WHERE project_id = ? AND company_id = ? ORDER BY incident_date DESC, created_at DESC, id DESC',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function addProjectSafetyLog(int $projectId, array $data): int
+    {
+        if (!$this->getProjectById($projectId)) {
+            throw new InvalidArgumentException('Project not found.');
+        }
+
+        $logNo = trim((string)($data['log_no'] ?? '')) ?: 'SAF-' . date('YmdHis');
+        $title = trim((string)($data['title'] ?? ''));
+        $category = trim((string)($data['category'] ?? 'safety')) ?: 'safety';
+        $severity = in_array(trim((string)($data['severity'] ?? 'medium')), ['low', 'medium', 'high', 'critical'], true)
+            ? trim((string)($data['severity'] ?? 'medium'))
+            : 'medium';
+        $status = in_array(trim((string)($data['status'] ?? 'open')), ['open', 'under_review', 'resolved', 'closed'], true)
+            ? trim((string)($data['status'] ?? 'open'))
+            : 'open';
+
+        if ($title === '') {
+            throw new InvalidArgumentException('A safety or compliance log title is required.');
+        }
+
+        $this->query(
+            'INSERT INTO project_safety_logs (company_id, project_id, log_no, title, category, severity, incident_date, status, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$this->currentCompanyId(), $projectId, $logNo, $title, $category, $severity, trim((string)($data['incident_date'] ?? '')) !== '' ? trim((string)($data['incident_date'] ?? '')) : null, $status, trim((string)($data['notes'] ?? '')), (int)($_SESSION['user']['id'] ?? 0) ?: null]
+        );
+        return (int)$this->db->lastInsertId();
+    }
+
+    public function getProjectProcurementOrders(int $projectId): array
+    {
+        return $this->query(
+            'SELECT po.id, po.po_number, po.order_date, po.total_amount, po.status, po.workflow_status, s.company_name AS supplier
+             FROM purchase_orders po
+             LEFT JOIN suppliers s ON s.id = po.supplier_id
+             WHERE po.project_id = ? AND po.company_id = ?
+             ORDER BY po.order_date DESC, po.id DESC',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function getProjectMaterialReceipts(int $projectId): array
+    {
+        return $this->query(
+            'SELECT ir.id, ir.receipt_number, ir.received_at, po.po_number, s.company_name AS supplier,
+                    COALESCE(SUM(iri.quantity_received), 0) AS quantity_received
+             FROM inventory_receipts ir
+             INNER JOIN purchase_orders po ON po.id = ir.purchase_order_id AND po.company_id = ir.company_id
+             LEFT JOIN suppliers s ON s.id = po.supplier_id
+             LEFT JOIN inventory_receipt_items iri ON iri.receipt_id = ir.id
+             WHERE po.project_id = ? AND ir.company_id = ?
+             GROUP BY ir.id, ir.receipt_number, ir.received_at, po.po_number, s.company_name
+             ORDER BY ir.received_at DESC, ir.id DESC',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function getProjectProductivity(int $projectId): array
+    {
+        return $this->query(
+            'SELECT * FROM project_productivity WHERE project_id = ? AND company_id = ? ORDER BY report_date DESC, created_at DESC, id DESC',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function addProjectProductivity(int $projectId, array $data): int
+    {
+        if (!$this->getProjectById($projectId)) {
+            throw new InvalidArgumentException('Project not found.');
+        }
+
+        $trade = trim((string)($data['trade'] ?? ''));
+        $reportDate = trim((string)($data['report_date'] ?? '')) ?: date('Y-m-d');
+        $crewSize = max(0, (int)($data['crew_size'] ?? 0));
+        $plannedOutput = (float)($data['planned_output'] ?? 0);
+        $actualOutput = (float)($data['actual_output'] ?? 0);
+        $unitOfMeasure = trim((string)($data['unit_of_measure'] ?? 'm2')) ?: 'm2';
+        $notes = trim((string)($data['notes'] ?? ''));
+
+        if ($trade === '') {
+            throw new InvalidArgumentException('A trade or crew type is required.');
+        }
+
+        $this->query(
+            'INSERT INTO project_productivity (company_id, project_id, report_date, trade, crew_size, planned_output, actual_output, unit_of_measure, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$this->currentCompanyId(), $projectId, $reportDate, $trade, $crewSize, $plannedOutput, $actualOutput, $unitOfMeasure, $notes !== '' ? $notes : null, (int)($_SESSION['user']['id'] ?? 0) ?: null]
+        );
+
+        return (int)$this->db->lastInsertId();
+    }
+
+    public function getProjectRFIs(int $projectId): array
+    {
+        return $this->query(
+            'SELECT * FROM project_rfis WHERE project_id = ? AND company_id = ? ORDER BY due_date IS NULL ASC, due_date ASC, created_at DESC, id DESC',
+            [$projectId, $this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function addProjectRfi(int $projectId, array $data): int
+    {
+        if (!$this->getProjectById($projectId)) {
+            throw new InvalidArgumentException('Project not found.');
+        }
+
+        $rfiNo = trim((string)($data['rfi_no'] ?? '')) ?: 'RFI-' . date('YmdHis');
+        $title = trim((string)($data['title'] ?? ''));
+        $drawingRef = trim((string)($data['drawing_ref'] ?? ''));
+        $description = trim((string)($data['description'] ?? ''));
+        $issuedBy = trim((string)($data['issued_by'] ?? '')) ?: 'Project Team';
+        $dueDate = trim((string)($data['due_date'] ?? ''));
+        $status = in_array(trim((string)($data['status'] ?? 'submitted')), ['draft', 'submitted', 'under_review', 'approved', 'rejected', 'closed'], true)
+            ? trim((string)($data['status'] ?? 'submitted'))
+            : 'submitted';
+
+        if ($title === '') {
+            throw new InvalidArgumentException('An RFI title is required.');
+        }
+
+        $this->query(
+            'INSERT INTO project_rfis (company_id, project_id, rfi_no, title, drawing_ref, description, issued_by, due_date, status, response, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$this->currentCompanyId(), $projectId, $rfiNo, $title, $drawingRef !== '' ? $drawingRef : null, $description, $issuedBy, $dueDate !== '' ? $dueDate : null, $status, trim((string)($data['response'] ?? '')) ?: null, (int)($_SESSION['user']['id'] ?? 0) ?: null]
+        );
+        return (int)$this->db->lastInsertId();
+    }
+
+    public function updateProjectRfiStatus(int $projectId, int $rfiId, string $status, ?string $response = null): void
+    {
+        $status = in_array($status, ['draft', 'submitted', 'under_review', 'approved', 'rejected', 'closed'], true) ? $status : 'submitted';
+        $this->query(
+            'UPDATE project_rfis SET status = ?, response = ? WHERE id = ? AND project_id = ? AND company_id = ? LIMIT 1',
+            [$status, $response !== null ? trim($response) : null, $rfiId, $projectId, $this->currentCompanyId()]
+        );
     }
 
     public function saveSchedule(array $data): int

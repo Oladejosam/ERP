@@ -5,6 +5,17 @@ require_once APP_ROOT . '/core/Model.php';
 
 class RoleModel extends Model
 {
+    public function __construct()
+    {
+        parent::__construct();
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS workflow_settings (
+                company_id INT PRIMARY KEY,
+                management_level_count INT NOT NULL DEFAULT 3
+            )'
+        );
+    }
+
     public static function defaultRoleNames(): array
     {
         return [
@@ -75,8 +86,20 @@ class RoleModel extends Model
     {
         $this->ensureStandardRoleSet();
         return $this->query(
-            'SELECT id, company_id, name, description FROM roles WHERE company_id IS NULL OR company_id = ? ORDER BY name ASC, id ASC',
-            [$this->currentCompanyId()]
+            'SELECT r.id, r.company_id, r.name, r.description
+             FROM roles r
+             WHERE (r.company_id IS NULL OR r.company_id = ?)
+               AND NOT EXISTS (
+                   SELECT 1 FROM roles duplicate
+                   WHERE LOWER(TRIM(duplicate.name)) = LOWER(TRIM(r.name))
+                     AND (duplicate.company_id IS NULL OR duplicate.company_id = ?)
+                     AND (
+                         (duplicate.company_id = ? AND r.company_id IS NULL)
+                         OR (duplicate.company_id = r.company_id AND duplicate.id < r.id)
+                     )
+               )
+             ORDER BY r.name ASC, r.id ASC',
+            [$this->currentCompanyId(), $this->currentCompanyId(), $this->currentCompanyId()]
         )->fetchAll();
     }
 
@@ -105,8 +128,15 @@ class RoleModel extends Model
     public function getManagementRoles(): array
     {
         return $this->query(
-            'SELECT id, company_id, name, created_at FROM management_roles WHERE company_id IS NULL OR company_id = ? ORDER BY name ASC, id ASC',
-            [$this->currentCompanyId()]
+            'SELECT DISTINCT r.id, r.company_id, r.name, r.created_at
+             FROM roles r
+             INNER JOIN workflow_role_links link ON link.role_id = r.id AND link.company_id = ?
+             INNER JOIN workflow_levels level ON level.id = link.level_id AND level.company_id = link.company_id
+             WHERE r.company_id = ? AND level.sort_order <= COALESCE((
+                 SELECT management_level_count FROM workflow_settings settings WHERE settings.company_id = ? LIMIT 1
+             ), 3)
+             ORDER BY level.sort_order ASC, r.name ASC, r.id ASC',
+            [$this->currentCompanyId(), $this->currentCompanyId(), $this->currentCompanyId()]
         )->fetchAll();
     }
 
@@ -130,9 +160,6 @@ class RoleModel extends Model
 
     public function deleteManagementRole(int $roleId): void
     {
-        if ($roleId <= 0) {
-            throw new InvalidArgumentException('Select a valid management role.');
-        }
-        $this->query('DELETE FROM management_roles WHERE id = ? AND (company_id IS NULL OR company_id = ?)', [$roleId, $this->currentCompanyId()]);
+        $this->deleteRole($roleId);
     }
 }

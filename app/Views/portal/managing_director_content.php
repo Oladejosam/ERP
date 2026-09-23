@@ -9,7 +9,7 @@
         </div>
 
         <div class="row g-4">
-            <div class="col-md-4">
+            <div class="col-md-6">
                 <div class="card border-0 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -21,19 +21,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card border-0 shadow-sm h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="text-muted">Projects</span>
-                            <i class="bi bi-kanban text-success fs-4"></i>
-                        </div>
-                        <p class="text-muted mb-0">Monitor active projects and delivery.</p>
-                        <a class="btn btn-outline-success btn-sm mt-3" href="/ERP/public/modules/projects">View Projects</a>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4">
+            <div class="col-md-6">
                 <div class="card border-0 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center mb-2">

@@ -9,10 +9,6 @@
                 <a class="btn btn-outline-secondary" href="/ERP/public/management/employees/template" download>Download Template</a>
                 <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#uploadEmployeeModal">Upload Employees</button>
                 <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addEmployeeModal">Add Employee</button>
-                <form method="post" action="/ERP/public/management/employees/create-credentials" style="display:inline-block;">
-                    <input type="hidden" name="form_action" value="create_missing_credentials">
-                    <button type="submit" class="btn btn-warning">Create Missing Credentials</button>
-                </form>
                 <a class="btn btn-outline-dark" href="/ERP/public/management/employees/archive">View Archive</a>
             </div>
         </div>
@@ -78,6 +74,32 @@
                 </tbody>
             </table>
         </form>
+    </div>
+</div>
+
+<div class="modal fade" id="uploadEmployeeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Upload Employees</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="/ERP/public/management/employees/upload" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Employee file</label>
+                        <input type="file" class="form-control" name="employee_file" accept=".csv,.xls,.xlsx" required>
+                    </div>
+                    <div class="small text-muted">
+                        Upload a CSV, XLS, or XLSX file using the employee template. The file should contain employee details and required columns.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Upload</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 

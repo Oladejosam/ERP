@@ -9,18 +9,7 @@
         </div>
 
         <div class="row g-4 mb-4">
-            <div class="col-md-3">
-                <div class="card border-0 shadow-sm h-100">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="text-muted">Projects</span>
-                            <i class="bi bi-building text-primary fs-4"></i>
-                        </div>
-                        <h3 class="fw-bold mb-0">12</h3>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <div class="card border-0 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -31,7 +20,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <div class="card border-0 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -42,7 +31,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <div class="card border-0 shadow-sm h-100">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -62,13 +51,13 @@
                         <h5 class="fw-bold mb-3">Quick access modules</h5>
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/modules/projects">Projects</a>
-                            </div>
-                            <div class="col-md-6">
                                 <a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/modules/inventory">Inventory</a>
                             </div>
                             <div class="col-md-6">
                                 <a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/modules/accounting">Accounting</a>
+                            </div>
+                            <div class="col-md-6">
+                                <a class="btn btn-outline-secondary w-100 py-3" href="/ERP/public/management/employees">Employees</a>
                             </div>
                             <div class="col-md-6">
                                 <a class="btn btn-outline-secondary w-100 py-3" href="/ERP/public/management/employees">Employees</a>

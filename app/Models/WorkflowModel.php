@@ -27,6 +27,12 @@ class WorkflowModel extends Model
             )'
         );
         $this->query('ALTER TABLE workflow_role_links ADD COLUMN IF NOT EXISTS level_id INT NULL AFTER parent_role_id');
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS workflow_settings (
+                company_id INT PRIMARY KEY,
+                management_level_count INT NOT NULL DEFAULT 3
+            )'
+        );
     }
 
     public function getRoles(): array
@@ -63,6 +69,23 @@ class WorkflowModel extends Model
     public function getLevels(): array
     {
         return $this->query('SELECT id, name, sort_order FROM workflow_levels WHERE company_id = ? ORDER BY sort_order ASC, name ASC', [$this->currentCompanyId()])->fetchAll();
+    }
+
+    public function getManagementLevelCount(): int
+    {
+        $count = $this->query('SELECT management_level_count FROM workflow_settings WHERE company_id = ? LIMIT 1', [$this->currentCompanyId()])->fetchColumn();
+        return $count === false ? 3 : max(1, (int)$count);
+    }
+
+    public function saveManagementLevelCount(int $count): void
+    {
+        if ($count < 1 || $count > 100) {
+            throw new InvalidArgumentException('The management level count must be between 1 and 100.');
+        }
+        $this->query(
+            'INSERT INTO workflow_settings (company_id, management_level_count) VALUES (?, ?) ON DUPLICATE KEY UPDATE management_level_count = VALUES(management_level_count)',
+            [$this->currentCompanyId(), $count]
+        );
     }
 
     public function createLevel(string $name): void

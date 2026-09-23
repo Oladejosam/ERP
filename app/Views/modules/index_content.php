@@ -8,7 +8,7 @@
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/management/employees">Employees</a></div>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/management/hr">HR</a></div>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/management/procurement">Procurement</a></div>
-            <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/modules/projects">Projects</a></div>
+            <?php if (($companyModel ?? null) && $companyModel->hasCurrentUserModuleAccess('projects')): ?><div class="col-md-3"><a class="btn btn-outline-primary w-100" href="/ERP/public/modules/projects"><i class="bi bi-building me-1"></i>Projects</a></div><?php endif; ?>
             <div class="col-md-3"><a class="btn btn-outline-secondary w-100" href="/ERP/public/modules/contract-admin"><i class="bi bi-file-earmark-check me-1"></i>Contract Admin</a></div>
             <?php foreach (['sales_marketing' => 'Sales & Marketing', 'quality_control' => 'Quality Control', 'workshop_maintenance' => 'Workshop & Maintenance', 'mix_design' => 'Mix Design', 'dispatch' => 'Dispatch Management', 'business_intelligence' => 'Business Intelligence'] as $rmcKey => $rmcLabel): ?>
                 <?php if (($companyModel ?? null) && $companyModel->hasCurrentUserModuleAccess($rmcKey)): ?><div class="col-md-3"><a class="btn btn-outline-success w-100" href="/ERP/public/modules/rmc?module=<?php echo urlencode($rmcKey); ?>"><?php echo htmlspecialchars($rmcLabel); ?></a></div><?php endif; ?>

@@ -113,13 +113,13 @@ document.querySelectorAll('.department-role').forEach((checkbox) => {
     <div class="col-lg-6">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
-                <h5 class="fw-bold mb-3">Management Roles</h5>
+                <h5 class="fw-bold mb-3">Management Roles (Top 3 Workflow Levels)</h5>
                 <div class="list-group">
                     <?php foreach (($managementRoles ?? []) as $managementRole): ?>
                         <div class="list-group-item d-flex justify-content-between align-items-center">
                             <span><?php echo htmlspecialchars($managementRole['name']); ?></span>
-                            <form method="post" action="/ERP/public/management/management-roles/delete" onsubmit="return confirm('Delete this management role?');">
-                                <input type="hidden" name="management_role_id" value="<?php echo (int)$managementRole['id']; ?>">
+                            <form method="post" action="/ERP/public/management/roles/delete" onsubmit="return confirm('Delete this management role?');">
+                                <input type="hidden" name="role_id" value="<?php echo (int)$managementRole['id']; ?>">
                                 <button class="btn btn-sm btn-outline-danger" type="submit">Delete Management Role</button>
                             </form>
                         </div>

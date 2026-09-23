@@ -14,7 +14,7 @@
 
         <div class="table-responsive">
             <table class="table table-striped align-middle">
-                <thead><tr><th>Project No.</th><th>Name</th><th>Client</th><th>Location</th><th>Dates</th><th>Progress</th><th>Status</th><th>Action</th></tr></thead>
+                <thead><tr><th>Project No.</th><th>Name</th><th>Client</th><th>Location</th><th>Dates</th><th>Progress</th><th>Status</th><th class="text-end">Action</th></tr></thead>
                 <tbody>
                 <?php if (empty($projects)): ?>
                     <tr><td colspan="8" class="text-center text-muted py-4">No projects registered for this company.</td></tr>
@@ -27,7 +27,7 @@
                         <td><?php echo htmlspecialchars($project['start_date'] . ' to ' . $project['end_date']); ?></td>
                         <td style="min-width: 130px"><div class="progress" role="progressbar" aria-valuenow="<?php echo (int)$project['progress_percent']; ?>" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width: <?php echo (int)$project['progress_percent']; ?>%"> <?php echo (int)$project['progress_percent']; ?>%</div></div></td>
                         <td><?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $project['status']))); ?></td>
-                        <td><a class="btn btn-sm btn-outline-primary" href="/ERP/public/modules/projects/view?id=<?php echo (int)$project['id']; ?>"><i class="bi bi-eye me-1"></i>View</a></td>
+                        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="/ERP/public/projects/detail?id=<?php echo (int)$project['id']; ?>">View Details</a></td>
                     </tr>
                 <?php endforeach; endif; ?>
                 </tbody>

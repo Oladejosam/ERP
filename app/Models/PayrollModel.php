@@ -86,6 +86,24 @@ class PayrollModel extends Model
         return (int)($row['sent_count'] ?? 0);
     }
 
+    public function markSelectedPayrollsSent(array $ids): int
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids), fn($id) => $id > 0));
+        if (empty($ids)) {
+            return 0;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $this->query(
+            'UPDATE payrolls SET sent_to_portal = 1 WHERE sent_to_portal = 0 AND id IN (' . $placeholders . ')',
+            $ids
+        );
+
+        $stmt = $this->query('SELECT ROW_COUNT() AS sent_count');
+        $row = $stmt->fetch();
+        return (int)($row['sent_count'] ?? 0);
+    }
+
     public function bulkUploadPayrolls(array $file): int
     {
         if (empty($file['tmp_name'])) {

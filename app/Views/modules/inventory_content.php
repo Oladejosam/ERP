@@ -80,12 +80,11 @@
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">Item Code</label>
-                            <input class="form-control" name="item_code" id="inventoryItemCode" required>
+                            <input class="form-control" name="item_code" id="inventoryItemCode" list="inventoryItemSuggestions" autocomplete="off" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Item Name</label>
-                            <input class="form-control" name="name" id="inventoryItemName" list="inventoryItemNames" autocomplete="off" required>
-                            <datalist id="inventoryItemNames"></datalist>
+                            <input class="form-control" name="name" id="inventoryItemName" list="inventoryItemSuggestions" autocomplete="off" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Category</label>
@@ -120,6 +119,7 @@
                             <input type="number" min="0" class="form-control" name="stock" id="inventoryItemStock" value="0" required>
                         </div>
                     </div>
+                    <datalist id="inventoryItemSuggestions"></datalist>
                     <div class="mt-4 d-flex justify-content-end">
                         <button class="btn btn-primary">Save Item</button>
                     </div>
@@ -133,32 +133,89 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const nameInput = document.getElementById('inventoryItemName');
-    const suggestions = document.getElementById('inventoryItemNames');
     const codeInput = document.getElementById('inventoryItemCode');
     const categoryInput = document.getElementById('inventoryItemCategory');
     const unitInput = document.getElementById('inventoryItemUnit');
     const priceInput = document.getElementById('inventoryItemPrice');
-    if (!nameInput || !suggestions) return;
-    let matches = [];
-    nameInput.addEventListener('input', function () {
-        const query = nameInput.value.trim();
-        if (query.length < 2) return;
-        fetch('/ERP/public/inventory/search?q=' + encodeURIComponent(query), {headers: {Accept: 'application/json'}})
-            .then(response => response.json())
-            .then(data => {
-                matches = data.items || [];
-                suggestions.innerHTML = matches.map(item => '<option value="' + String(item.name).replace(/"/g, '&quot;') + '">' + String(item.item_code).replace(/"/g, '&quot;') + '</option>').join('');
-                const existing = matches.find(item => item.name.toLowerCase() === query.toLowerCase());
-                if (!existing) return;
-                codeInput.value = existing.item_code || '';
-                categoryInput.value = existing.category_name || '';
-                unitInput.value = existing.unit || 'pcs';
-                priceInput.value = existing.cost_price || existing.selling_price || 0;
-                codeInput.readOnly = true;
-                categoryInput.readOnly = true;
-                unitInput.readOnly = true;
+    const suggestions = document.getElementById('inventoryItemSuggestions');
+
+    if (!nameInput || !codeInput || !suggestions) return;
+
+    function populateExistingItem(item) {
+        if (!item) return;
+        nameInput.value = item.name || nameInput.value;
+        codeInput.value = item.item_code || codeInput.value;
+        categoryInput.value = item.category_name || categoryInput.value;
+        unitInput.value = item.unit || unitInput.value || 'pcs';
+        priceInput.value = item.cost_price || item.selling_price || priceInput.value || 0;
+    }
+
+    function renderSuggestions(matches) {
+        suggestions.innerHTML = '';
+        matches.forEach(function (item) {
+            const codeOption = document.createElement('option');
+            codeOption.value = item.item_code || '';
+            codeOption.label = (item.item_code || '') + ' - ' + (item.name || '');
+            suggestions.appendChild(codeOption);
+
+            const nameOption = document.createElement('option');
+            nameOption.value = item.name || '';
+            nameOption.label = (item.name || '') + ' - ' + (item.item_code || '');
+            suggestions.appendChild(nameOption);
+        });
+    }
+
+    function searchMatches(query) {
+        const trimmed = query.trim();
+        if (trimmed.length < 2) {
+            suggestions.innerHTML = '';
+            return;
+        }
+
+        fetch('/ERP/public/inventory/search?q=' + encodeURIComponent(trimmed), { headers: { Accept: 'application/json' } })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('Unable to fetch inventory suggestions');
+                }
+                return response.json();
             })
-            .catch(() => {});
+            .then(function (data) {
+                const matches = data.items || [];
+                renderSuggestions(matches);
+
+                const exactMatch = matches.find(function (item) {
+                    return (item.item_code || '').toLowerCase() === trimmed.toLowerCase() || (item.name || '').toLowerCase() === trimmed.toLowerCase();
+                });
+
+                if (exactMatch) {
+                    populateExistingItem(exactMatch);
+                }
+            })
+            .catch(function () {
+                suggestions.innerHTML = '';
+            });
+    }
+
+    nameInput.addEventListener('input', function () {
+        searchMatches(nameInput.value);
+    });
+
+    codeInput.addEventListener('input', function () {
+        searchMatches(codeInput.value);
+    });
+
+    nameInput.addEventListener('change', function () {
+        const typed = nameInput.value.trim();
+        if (typed !== '') {
+            searchMatches(typed);
+        }
+    });
+
+    codeInput.addEventListener('change', function () {
+        const typed = codeInput.value.trim();
+        if (typed !== '') {
+            searchMatches(typed);
+        }
     });
 });
 </script>

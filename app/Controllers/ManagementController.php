@@ -534,8 +534,11 @@ class ManagementController extends BaseController
             $this->redirect('/management/employees/view?id=' . $employeeId);
         }
         $departmentNames = array_map(static fn (array $department): string => strtolower(trim((string)$department['name'])), $this->employeeModel->getDepartments());
-        $positionNames = array_map(static fn (array $role): string => strtolower(trim((string)$role['name'])), $this->roleModel->getRoles());
-        if (!in_array(strtolower(trim((string)($_POST['department'] ?? ''))), $departmentNames, true) || !in_array(strtolower(trim((string)($_POST['position'] ?? ''))), $positionNames, true)) {
+        $roles = $this->roleModel->getRoles();
+        $positionNames = array_map(static fn (array $role): string => strtolower(trim((string)$role['name'])), $roles);
+        $roleId = (int)($_POST['role_id'] ?? 0);
+        $validRoleIds = array_map(static fn (array $role): int => (int)$role['id'], $roles);
+        if (!in_array(strtolower(trim((string)($_POST['department'] ?? ''))), $departmentNames, true) || !in_array(strtolower(trim((string)($_POST['position'] ?? ''))), $positionNames, true) || !in_array($roleId, $validRoleIds, true)) {
             $_SESSION['employee_flash'] = 'Select a department and position created in this company.';
             $this->redirect('/management/employees/view?id=' . $employeeId);
         }
@@ -563,7 +566,7 @@ class ManagementController extends BaseController
             $this->userModel->updateUserByEmployeeId($employeeId, [
                 'name' => trim((string)($_POST['first_name'] ?? '') . ' ' . (string)($_POST['last_name'] ?? '')),
                 'email' => $email,
-                'role_id' => (int)($_POST['role_id'] ?? 0),
+                'role_id' => $roleId,
             ], 'Employee profile updated');
             $this->employeeModel->saveCustomFieldValues($employeeId, (array)($_POST['custom_fields'] ?? []));
             $_SESSION['employee_flash'] = 'Employee details updated successfully.';
@@ -1145,11 +1148,52 @@ class ManagementController extends BaseController
             'pendingOrders' => $isHeadStore || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('pending_head_approval') : ($isProcurementOfficer ? $this->purchaseOrderModel->getWorkflowOrders('pending_procurement') : []),
             'flaggedOrders' => $isHeadStore || $isProcurementOfficer || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('flagged') : [],
             'logisticsOrders' => $isLogistics || $isSuperAdmin ? $this->purchaseOrderModel->getWorkflowOrders('sent_to_logistics') : [],
+            'procurementRequests' => $isProcurementOfficer || $isSuperAdmin || $isHeadStore ? $this->purchaseOrderModel->getProcurementRequests() : [],
             'canInitiatePurchaseOrder' => $isStore || $isSuperAdmin,
             'canApprovePurchaseOrder' => $isHeadStore || $isProcurementOfficer || $isSuperAdmin,
             'canReceivePurchaseOrder' => $isLogistics || $isSuperAdmin,
             'purchaseOrderDirectToProcurement' => $isHeadStore || $isSuperAdmin,
         ]);
+    }
+
+    public function uploadVendorInvoice(): void
+    {
+        $this->requireCompanyModule('procurement');
+        $sourceType = trim((string)($_POST['request_source'] ?? ''));
+        $sourceId = (int)($_POST['source_id'] ?? 0);
+        try {
+            $this->purchaseOrderModel->saveProcurementRequestInvoice($sourceType, $sourceId, (string)($_POST['vendor_name'] ?? ''), (string)($_POST['invoice_number'] ?? ''), (string)($_POST['invoice_label'] ?? 'Vendor Invoice'));
+            $_SESSION['procurement_flash'] = 'Vendor invoice uploaded and added to the procurement review list.';
+        } catch (Throwable $exception) {
+            $_SESSION['procurement_flash'] = 'Unable to upload invoice: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/procurement');
+    }
+
+    public function selectVendorInvoice(): void
+    {
+        $this->requireCompanyModule('procurement');
+        $invoiceId = (int)($_POST['invoice_id'] ?? 0);
+        try {
+            $this->purchaseOrderModel->approveProcurementInvoice($invoiceId);
+            $_SESSION['procurement_flash'] = 'Vendor invoice marked as the selected invoice for this request.';
+        } catch (Throwable $exception) {
+            $_SESSION['procurement_flash'] = 'Unable to select invoice: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/procurement');
+    }
+
+    public function createPurchaseOrderFromSelectedInvoice(): void
+    {
+        $this->requireCompanyModule('procurement');
+        $invoiceId = (int)($_POST['invoice_id'] ?? 0);
+        try {
+            $poId = $this->purchaseOrderModel->createPurchaseOrderFromSelectedInvoice($invoiceId, (int)($_SESSION['user']['id'] ?? 0), $_POST);
+            $_SESSION['procurement_flash'] = 'Purchase order created from the approved vendor invoice. PO #' . rawurlencode((string)$this->purchaseOrderModel->getPurchaseOrderById($poId)['po_number'] ?? '');
+        } catch (Throwable $exception) {
+            $_SESSION['procurement_flash'] = 'Unable to create purchase order from selected invoice: ' . $exception->getMessage();
+        }
+        $this->redirect('/management/procurement');
     }
 
     public function createStorePurchaseOrder(): void

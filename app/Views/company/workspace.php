@@ -22,7 +22,7 @@ foreach ($companies as $company) {
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div><p class="text-uppercase text-muted small fw-semibold mb-1">Super Admin</p><h1 class="h3 mb-0">Choose a company workspace</h1></div>
         <div class="d-flex gap-2">
-            <a class="btn btn-outline-primary" href="/ERP/public/"><i class="bi bi-arrow-left me-1"></i>Back to Dashboard</a>
+            <a class="btn btn-outline-primary" href="/ERP/public/dashboard"><i class="bi bi-arrow-left me-1"></i>Back to Dashboard</a>
             <a class="btn btn-outline-secondary" href="/ERP/public/logout"><i class="bi bi-box-arrow-right me-1"></i>Logout</a>
         </div>
     </div>

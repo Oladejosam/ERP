@@ -52,13 +52,58 @@ class PurchaseOrderModel extends Model
         $this->query(
             'CREATE TABLE IF NOT EXISTS purchase_order_invoices (
                 id INT PRIMARY KEY AUTO_INCREMENT,
-                purchase_order_id INT NOT NULL,
+                purchase_order_id INT NULL,
                 label VARCHAR(255) NOT NULL,
                 original_name VARCHAR(255) NOT NULL,
                 stored_name VARCHAR(255) NOT NULL,
                 file_type VARCHAR(100) NOT NULL,
                 file_size INT NOT NULL,
                 uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_purchase_order_invoices_po (purchase_order_id),
+                FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE
+            )'
+        );
+        $this->query('ALTER TABLE purchase_order_invoices ADD COLUMN IF NOT EXISTS vendor_name VARCHAR(150) NULL AFTER label');
+        $this->query('ALTER TABLE purchase_order_invoices ADD COLUMN IF NOT EXISTS invoice_number VARCHAR(120) NULL AFTER vendor_name');
+        $this->query('ALTER TABLE purchase_order_invoices ADD COLUMN IF NOT EXISTS is_selected TINYINT(1) NOT NULL DEFAULT 0 AFTER uploaded_at');
+        $this->query('ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS request_source VARCHAR(40) NOT NULL DEFAULT "manual" AFTER workflow_status');
+        $this->query('ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS source_reference VARCHAR(120) NULL AFTER request_source');
+        $this->query('ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS source_label VARCHAR(255) NULL AFTER source_reference');
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS procurement_request_invoices (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                source_type ENUM("requisition","inventory","manual") NOT NULL,
+                source_id INT NOT NULL,
+                vendor_name VARCHAR(150) NULL,
+                invoice_number VARCHAR(120) NULL,
+                label VARCHAR(255) NOT NULL,
+                original_name VARCHAR(255) NOT NULL,
+                stored_name VARCHAR(255) NOT NULL,
+                file_type VARCHAR(100) NOT NULL,
+                file_size INT NOT NULL,
+                is_selected TINYINT(1) NOT NULL DEFAULT 0,
+                purchase_order_id INT NULL,
+                uploaded_by INT NULL,
+                uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_procurement_request_invoices_source (company_id, source_type, source_id),
+                INDEX idx_procurement_request_invoices_selected (company_id, source_type, source_id, is_selected)
+            )'
+        );
+        $this->query(
+            'CREATE TABLE IF NOT EXISTS purchase_payment_schedules (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                company_id INT NOT NULL,
+                purchase_order_id INT NOT NULL,
+                scheduled_date DATE NOT NULL,
+                amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                status ENUM("scheduled", "paid", "cancelled") NOT NULL DEFAULT "scheduled",
+                payment_reference VARCHAR(120) NULL,
+                notes TEXT NULL,
+                created_by INT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_payment_schedule_company_date (company_id, scheduled_date),
                 FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE
             )'
         );
@@ -119,7 +164,62 @@ class PurchaseOrderModel extends Model
         )->fetchAll();
     }
 
-    public function createWorkflowOrder(array $data, int $requestedBy, string $initialWorkflowStatus = 'pending_head_approval'): int
+    public function getApprovedPurchaseOrders(): array
+    {
+        return $this->query(
+            'SELECT po.id, po.po_number, po.order_date, po.total_amount, po.workflow_status,
+                    s.company_name AS supplier, p.name AS project_name,
+                    COALESCE((SELECT SUM(amount) FROM purchase_payment_schedules ps WHERE ps.purchase_order_id = po.id AND ps.company_id = po.company_id AND ps.status <> "cancelled"), 0) AS scheduled_amount
+             FROM purchase_orders po
+             LEFT JOIN suppliers s ON s.id = po.supplier_id
+             LEFT JOIN projects p ON p.id = po.project_id
+             WHERE po.company_id = ? AND po.workflow_status IN ("approved", "sent_to_logistics")
+             ORDER BY po.order_date DESC, po.id DESC',
+            [$this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function getPaymentSchedules(): array
+    {
+        return $this->query(
+            'SELECT ps.*, po.po_number, po.total_amount, s.company_name AS supplier
+             FROM purchase_payment_schedules ps
+             INNER JOIN purchase_orders po ON po.id = ps.purchase_order_id AND po.company_id = ps.company_id
+             LEFT JOIN suppliers s ON s.id = po.supplier_id
+             WHERE ps.company_id = ? ORDER BY ps.scheduled_date ASC, ps.id DESC',
+            [$this->currentCompanyId()]
+        )->fetchAll();
+    }
+
+    public function savePaymentSchedule(array $data, int $userId): int
+    {
+        $scheduleId = (int)($data['payment_schedule_id'] ?? 0);
+        $purchaseOrderId = (int)($data['purchase_order_id'] ?? 0);
+        $scheduledDate = trim((string)($data['scheduled_date'] ?? ''));
+        $amount = (float)($data['amount'] ?? 0);
+        $status = trim((string)($data['payment_status'] ?? 'scheduled'));
+        $reference = trim((string)($data['payment_reference'] ?? ''));
+        $notes = trim((string)($data['payment_notes'] ?? ''));
+        if ($scheduledDate === '' || $amount <= 0 || !in_array($status, ['scheduled', 'paid', 'cancelled'], true)) {
+            throw new InvalidArgumentException('A valid payment date, amount, and status are required.');
+        }
+        $order = $this->query('SELECT id, total_amount, workflow_status FROM purchase_orders WHERE id = ? AND company_id = ? AND workflow_status IN ("approved", "sent_to_logistics") LIMIT 1', [$purchaseOrderId, $this->currentCompanyId()])->fetch();
+        if (!$order) {
+            throw new InvalidArgumentException('Only an approved purchase order can be scheduled for payment.');
+        }
+        $scheduledAmount = (float)$this->query('SELECT COALESCE(SUM(amount), 0) FROM purchase_payment_schedules WHERE purchase_order_id = ? AND company_id = ? AND status <> "cancelled" AND id <> ?', [$purchaseOrderId, $this->currentCompanyId(), $scheduleId])->fetchColumn();
+        if ($scheduledAmount + $amount > (float)$order['total_amount'] + 0.01) {
+            throw new InvalidArgumentException('Scheduled payments cannot exceed the purchase order total.');
+        }
+        if ($scheduleId > 0) {
+            $this->query('UPDATE purchase_payment_schedules SET scheduled_date = ?, amount = ?, status = ?, payment_reference = ?, notes = ? WHERE id = ? AND company_id = ? AND purchase_order_id = ?', [$scheduledDate, $amount, $status, $reference !== '' ? $reference : null, $notes !== '' ? $notes : null, $scheduleId, $this->currentCompanyId(), $purchaseOrderId]);
+            return $scheduleId;
+        }
+        $this->query('INSERT INTO purchase_payment_schedules (company_id, purchase_order_id, scheduled_date, amount, status, payment_reference, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [$this->currentCompanyId(), $purchaseOrderId, $scheduledDate, $amount, $status, $reference !== '' ? $reference : null, $notes !== '' ? $notes : null, $userId ?: null]);
+        return (int)$this->db->lastInsertId();
+    }
+
+    public function createWorkflowOrder(array $data, int $requestedBy, string $initialWorkflowStatus = 'pending_head_approval', string $requestSource = 'manual', string $sourceReference = '', string $sourceLabel = ''): int
     {
         $supplierSelection = trim((string)($data['supplier_id'] ?? ''));
         $projectId = !empty($data['project_id']) ? (int)$data['project_id'] : null;
@@ -134,20 +234,25 @@ class PurchaseOrderModel extends Model
                 $totalAmount += (int)$quantities[$index] * max(0, (float)($priceRates[$index] ?? 0));
             }
         }
-        if ($supplierSelection === '' || $productNames === [] || $totalAmount <= 0) {
-            throw new InvalidArgumentException('Select a supplier and add at least one priced item.');
+        if ($productNames === [] || $totalAmount <= 0) {
+            throw new InvalidArgumentException('Add at least one priced item to the purchase order.');
         }
         if (!in_array($initialWorkflowStatus, ['pending_head_approval', 'pending_procurement'], true)) {
             throw new InvalidArgumentException('Invalid purchase order workflow status.');
         }
-        $supplierId = $supplierSelection === 'new'
-            ? $this->findOrCreateSupplier($data)
-            : (int)$supplierSelection;
-        $supplier = $this->query('SELECT id FROM suppliers WHERE id = ? AND company_id = ? AND status = "active" LIMIT 1', [$supplierId, $this->currentCompanyId()])->fetch();
-        if (!$supplier) {
-            throw new InvalidArgumentException('Select a valid active supplier.');
+        $supplierId = null;
+        if ($supplierSelection !== '') {
+            $supplierId = $supplierSelection === 'new' ? $this->findOrCreateSupplier($data) : (int)$supplierSelection;
+            $supplier = $this->query('SELECT id FROM suppliers WHERE id = ? AND company_id = ? AND status = "active" LIMIT 1', [$supplierId, $this->currentCompanyId()])->fetch();
+            if (!$supplier) {
+                throw new InvalidArgumentException('Select a valid active supplier.');
+            }
         }
-        $this->query('INSERT INTO purchase_orders (company_id, requested_by, po_number, supplier_id, project_id, order_date, total_amount, status, workflow_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, "draft", ?, NOW())', [$this->currentCompanyId(), $requestedBy, $poNumber, $supplierId, $projectId, $orderDate, $totalAmount, $initialWorkflowStatus]);
+        $this->query(
+            'INSERT INTO purchase_orders (company_id, requested_by, po_number, supplier_id, project_id, order_date, total_amount, status, workflow_status, request_source, source_reference, source_label, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, "draft", ?, ?, ?, ?, NOW())',
+            [$this->currentCompanyId(), $requestedBy, $poNumber, $supplierId, $projectId, $orderDate, $totalAmount, $initialWorkflowStatus, in_array($requestSource, ['requisition', 'inventory', 'manual'], true) ? $requestSource : 'manual', trim($sourceReference) !== '' ? trim($sourceReference) : null, trim($sourceLabel) !== '' ? trim($sourceLabel) : null]
+        );
         $purchaseOrderId = (int)$this->db->lastInsertId();
         $this->createPurchaseOrderItems($purchaseOrderId, $data);
         return $purchaseOrderId;
@@ -409,6 +514,125 @@ class PurchaseOrderModel extends Model
              VALUES (?, ?, ?, ?, ?, ?, NOW())',
             [$purchaseOrderId, $label, $originalName, $storedName, $fileType, $fileSize]
         );
+    }
+
+    public function getProcurementRequests(): array
+    {
+        $companyId = $this->currentCompanyId();
+        $requests = [];
+
+        $requisitionRows = $this->query(
+            'SELECT d.id AS request_id, "requisition" AS source_type, CONCAT("REQ-", r.id) AS source_reference, r.title AS source_label, r.title, r.requisition_date, u.name AS requester_name, ri.description AS item_name, d.quantity, d.id AS dispatch_id
+             FROM requisition_dispatch_requests d
+             INNER JOIN requisitions r ON r.id = d.requisition_id AND r.company_id = d.company_id
+             INNER JOIN requisition_items ri ON ri.id = d.requisition_item_id
+             LEFT JOIN users u ON u.id = r.requested_by
+             WHERE d.company_id = ? AND d.decision = "purchase_required" AND d.status = "pending"
+             ORDER BY d.requested_at DESC, d.id DESC',
+            [$companyId]
+        )->fetchAll();
+
+        foreach ($requisitionRows as $row) {
+            $row['invoices'] = $this->getProcurementRequestInvoices('requisition', (int)$row['request_id']);
+            $row['selected_invoice_id'] = $this->query('SELECT id FROM procurement_request_invoices WHERE company_id = ? AND source_type = "requisition" AND source_id = ? AND is_selected = 1 LIMIT 1', [$companyId, (int)$row['request_id']])->fetchColumn();
+            $requests[] = $row;
+        }
+
+        $inventoryRows = $this->query(
+            'SELECT po.id AS request_id, po.request_source AS source_type, po.source_reference, po.source_label, po.po_number AS source_reference, po.po_number AS title, po.order_date, u.name AS requester_name, COALESCE((SELECT product_name FROM purchase_order_items WHERE purchase_order_id = po.id LIMIT 1), "Inventory purchase request") AS item_name, COALESCE((SELECT quantity FROM purchase_order_items WHERE purchase_order_id = po.id LIMIT 1), 0) AS quantity
+             FROM purchase_orders po
+             LEFT JOIN users u ON u.id = po.requested_by
+             WHERE po.company_id = ? AND po.request_source IN ("inventory", "manual") AND (po.workflow_status = "pending_procurement" OR po.workflow_status = "pending_head_approval")
+             ORDER BY po.created_at DESC, po.id DESC',
+            [$companyId]
+        )->fetchAll();
+
+        foreach ($inventoryRows as $row) {
+            $row['source_type'] = $row['source_type'] ?? 'inventory';
+            $row['invoices'] = $this->getProcurementRequestInvoices($row['source_type'], (int)$row['request_id']);
+            $row['selected_invoice_id'] = $this->query('SELECT id FROM procurement_request_invoices WHERE company_id = ? AND source_type = ? AND source_id = ? AND is_selected = 1 LIMIT 1', [$companyId, $row['source_type'], (int)$row['request_id']])->fetchColumn();
+            $requests[] = $row;
+        }
+
+        return $requests;
+    }
+
+    public function getProcurementRequestInvoices(string $sourceType, int $sourceId): array
+    {
+        return $this->query(
+            'SELECT id, source_type, source_id, vendor_name, invoice_number, label, original_name, stored_name, file_type, file_size, is_selected, uploaded_at
+             FROM procurement_request_invoices
+             WHERE company_id = ? AND source_type = ? AND source_id = ?
+             ORDER BY uploaded_at DESC, id DESC',
+            [$this->currentCompanyId(), $sourceType, $sourceId]
+        )->fetchAll();
+    }
+
+    public function saveProcurementRequestInvoice(string $sourceType, int $sourceId, string $vendorName, string $invoiceNumber, string $label): void
+    {
+        if (!in_array($sourceType, ['requisition', 'inventory', 'manual'], true)) {
+            throw new InvalidArgumentException('Unsupported procurement request source.');
+        }
+        if (empty($_FILES['vendor_invoice']['name']) || !is_uploaded_file($_FILES['vendor_invoice']['tmp_name'])) {
+            throw new InvalidArgumentException('Select a vendor invoice file to upload.');
+        }
+
+        $uploadDir = UPLOAD_DIR . 'procurement_invoices/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0777, true);
+        }
+
+        $originalName = basename((string)$_FILES['vendor_invoice']['name']);
+        $storedName = uniqid('proc_inv_', true) . '_' . preg_replace('/[^A-Za-z0-9._-]/', '_', $originalName);
+        $destination = $uploadDir . $storedName;
+
+        if (!move_uploaded_file((string)$_FILES['vendor_invoice']['tmp_name'], $destination)) {
+            throw new InvalidArgumentException('The invoice file could not be saved.');
+        }
+
+        $this->query(
+            'INSERT INTO procurement_request_invoices (company_id, source_type, source_id, vendor_name, invoice_number, label, original_name, stored_name, file_type, file_size, uploaded_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$this->currentCompanyId(), $sourceType, $sourceId, trim($vendorName) !== '' ? trim($vendorName) : null, trim($invoiceNumber) !== '' ? trim($invoiceNumber) : null, trim($label) !== '' ? trim($label) : 'Vendor Invoice', $originalName, $storedName, mime_content_type($destination) ?: 'application/octet-stream', filesize($destination), (int)($_SESSION['user']['id'] ?? 0) ?: null]
+        );
+    }
+
+    public function approveProcurementInvoice(int $invoiceId): void
+    {
+        $invoice = $this->query('SELECT company_id, source_type, source_id FROM procurement_request_invoices WHERE id = ? AND company_id = ? LIMIT 1', [$invoiceId, $this->currentCompanyId()])->fetch();
+        if (!$invoice) {
+            throw new InvalidArgumentException('Invoice not found.');
+        }
+
+        $this->query('UPDATE procurement_request_invoices SET is_selected = 0 WHERE company_id = ? AND source_type = ? AND source_id = ?', [$this->currentCompanyId(), $invoice['source_type'], (int)$invoice['source_id']]);
+        $this->query('UPDATE procurement_request_invoices SET is_selected = 1 WHERE id = ? AND company_id = ?', [$invoiceId, $this->currentCompanyId()]);
+    }
+
+    public function createPurchaseOrderFromSelectedInvoice(int $invoiceId, int $requestedBy, array $data): int
+    {
+        $invoice = $this->query('SELECT * FROM procurement_request_invoices WHERE id = ? AND company_id = ? LIMIT 1', [$invoiceId, $this->currentCompanyId()])->fetch();
+        if (!$invoice) {
+            throw new InvalidArgumentException('Choose a valid vendor invoice before creating the purchase order.');
+        }
+
+        $this->approveProcurementInvoice($invoiceId);
+        $requestSource = $invoice['source_type'];
+        $sourceReference = trim((string)($data['source_reference'] ?? '')) ?: $invoice['source_id'];
+        $sourceLabel = trim((string)($data['source_label'] ?? '')) ?: (string)($data['description'] ?? 'Procurement request');
+
+        $supplierId = !empty($data['supplier_id']) ? (int)$data['supplier_id'] : null;
+        if ($supplierId === null && !empty($data['supplier_company_name'])) {
+            $supplierId = $this->findOrCreateSupplier($data);
+        }
+        if ($supplierId === null) {
+            throw new InvalidArgumentException('Select a supplier for the purchase order.');
+        }
+
+        $purchaseOrderId = $this->createWorkflowOrder($data, $requestedBy, 'pending_procurement', $requestSource, (string)$sourceReference, $sourceLabel);
+        $this->query('UPDATE procurement_request_invoices SET purchase_order_id = ?, is_selected = 1 WHERE id = ? AND company_id = ?', [$purchaseOrderId, $invoiceId, $this->currentCompanyId()]);
+        $this->query('UPDATE purchase_order_invoices SET purchase_order_id = ?, is_selected = 1 WHERE original_name = ? AND purchase_order_id IS NULL', [$purchaseOrderId, $invoice['original_name']]);
+
+        return $purchaseOrderId;
     }
 
     public function updatePurchaseOrder(int $purchaseOrderId, array $data, string $reason = ''): void

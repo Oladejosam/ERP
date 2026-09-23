@@ -1,3 +1,10 @@
+<ul class="nav nav-tabs mb-4" role="tablist">
+    <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#salary-pane" type="button" role="tab">Salary</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#purchase-payments-pane" type="button" role="tab">Purchase Payments &amp; Scheduling</button></li>
+</ul>
+
+<div class="tab-content">
+<div class="tab-pane fade show active" id="salary-pane" role="tabpanel">
 <div class="card shadow-sm border-0">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -10,9 +17,10 @@
                 <a href="/ERP/public/management/payroll-reports" class="btn btn-outline-primary btn-sm">Payroll Reports</a>
                 <a href="/ERP/public/management/payroll-configuration" class="btn btn-outline-secondary btn-sm">Settings</a>
                 <a href="/ERP/public/portal/payroll" class="btn btn-outline-secondary btn-sm">Employee Portal</a>
-                <form method="post" action="/ERP/public/modules/accounting/send-all" class="d-inline">
+                <form method="post" action="/ERP/public/modules/accounting/send-all" class="d-inline" id="bulkSendSelectedForm">
                     <button type="submit" class="btn btn-warning btn-sm">Send All</button>
                 </form>
+                <button type="button" id="bulkSendSelectedButton" class="btn btn-outline-warning btn-sm">Send Selected</button>
                 <form method="post" action="/ERP/public/modules/accounting/upload" enctype="multipart/form-data" class="d-flex gap-2 align-items-center m-0">
                     <label class="btn btn-outline-primary btn-sm mb-0">
                         Choose File
@@ -72,9 +80,18 @@
         <?php endif; ?>
 
         <div class="table-responsive mt-4">
+            <div class="d-flex justify-content-end mb-2">
+                <label class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="checkbox" id="selectAllPayrollRows">
+                    <span class="form-check-label">Select all</span>
+                </label>
+            </div>
             <table id="payrollTable" class="table table-striped">
                 <thead>
                     <tr>
+                        <th style="width: 40px;">
+                            <input class="form-check-input payroll-row-select-all" type="checkbox" aria-label="Select all payroll rows">
+                        </th>
                         <th>Employee</th>
                         <th>Role</th>
                         <th>Payroll Month</th>
@@ -89,11 +106,14 @@
                 <tbody>
                     <?php if (empty($payrolls)): ?>
                         <tr>
-                            <td colspan="9" class="text-center text-muted">No payroll records found.</td>
+                            <td colspan="10" class="text-center text-muted">No payroll records found.</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($payrolls as $payroll): ?>
                             <tr>
+                                <td>
+                                    <input class="form-check-input payroll-row-select" type="checkbox" value="<?php echo (int)$payroll['id']; ?>" aria-label="Select payroll for <?php echo htmlspecialchars(($payroll['first_name'] ?? '') . ' ' . ($payroll['last_name'] ?? '')); ?>">
+                                </td>
                                 <td><?php echo htmlspecialchars(($payroll['first_name'] ?? '') . ' ' . ($payroll['last_name'] ?? '')); ?></td>
                                 <td><?php echo htmlspecialchars($payroll['position'] ?? 'Employee'); ?></td>
                                 <td><?php echo htmlspecialchars($payroll['payroll_month'] ?? ''); ?></td>
@@ -215,10 +235,129 @@
         </div>
     </div>
 <?php endforeach; ?>
+
+</div>
+
+<div class="tab-pane fade" id="purchase-payments-pane" role="tabpanel">
+    <div class="card shadow-sm border-0">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                <div><h4 class="fw-bold mb-1">Purchase Payments</h4><small class="text-muted">Schedule payments against purchase orders approved by Procurement.</small></div>
+                <span class="badge bg-success-subtle text-success">Approved procurement orders only</span>
+            </div>
+            <?php if (empty($approvedPurchaseOrders)): ?>
+                <p class="text-muted mb-0">No approved purchase orders are available for payment scheduling.</p>
+            <?php else: ?>
+                <div class="table-responsive">
+                    <table class="table table-striped align-middle">
+                        <thead><tr><th>PO Number</th><th>Supplier</th><th>Order Date</th><th>Total</th><th>Scheduled</th><th>Balance</th><th>Action</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($approvedPurchaseOrders as $order): ?>
+                            <?php $orderTotal = (float)($order['total_amount'] ?? 0); $scheduledAmount = (float)($order['scheduled_amount'] ?? 0); ?>
+                            <tr>
+                                <td class="fw-semibold"><?php echo htmlspecialchars($order['po_number'] ?? ''); ?></td>
+                                <td><?php echo htmlspecialchars($order['supplier'] ?? 'Not specified'); ?></td>
+                                <td><?php echo htmlspecialchars($order['order_date'] ?? ''); ?></td>
+                                <td>₦<?php echo number_format($orderTotal, 2); ?></td>
+                                <td>₦<?php echo number_format($scheduledAmount, 2); ?></td>
+                                <td>₦<?php echo number_format(max(0, $orderTotal - $scheduledAmount), 2); ?></td>
+                                <td><button class="btn btn-sm btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#paymentScheduleModal-<?php echo (int)$order['id']; ?>">Schedule Payment</button></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+
+            <h5 class="fw-bold mt-4 mb-3">Payment Schedule</h5>
+            <?php if (empty($paymentSchedules)): ?>
+                <p class="text-muted mb-0">No purchase payments have been scheduled.</p>
+            <?php else: ?>
+                <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Date</th><th>PO</th><th>Supplier</th><th>Amount</th><th>Status</th><th>Reference</th><th>Action</th></tr></thead><tbody>
+                    <?php foreach ($paymentSchedules as $payment): ?><tr><td><?php echo htmlspecialchars($payment['scheduled_date'] ?? ''); ?></td><td><?php echo htmlspecialchars($payment['po_number'] ?? ''); ?></td><td><?php echo htmlspecialchars($payment['supplier'] ?? 'Not specified'); ?></td><td>₦<?php echo number_format((float)($payment['amount'] ?? 0), 2); ?></td><td><span class="badge <?php echo ($payment['status'] ?? '') === 'paid' ? 'bg-success' : (($payment['status'] ?? '') === 'cancelled' ? 'bg-secondary' : 'bg-warning text-dark'); ?>"><?php echo htmlspecialchars(ucfirst((string)($payment['status'] ?? 'scheduled'))); ?></span></td><td><?php echo htmlspecialchars($payment['payment_reference'] ?? ''); ?></td><td><?php if (($payment['status'] ?? '') === 'scheduled'): ?><form method="post" action="/ERP/public/modules/accounting/purchase-payment/save" class="d-inline"><input type="hidden" name="payment_schedule_id" value="<?php echo (int)$payment['id']; ?>"><input type="hidden" name="purchase_order_id" value="<?php echo (int)$payment['purchase_order_id']; ?>"><input type="hidden" name="scheduled_date" value="<?php echo htmlspecialchars($payment['scheduled_date'] ?? ''); ?>"><input type="hidden" name="amount" value="<?php echo htmlspecialchars((string)$payment['amount']); ?>"><input type="hidden" name="payment_status" value="paid"><input type="hidden" name="payment_reference" value="<?php echo htmlspecialchars($payment['payment_reference'] ?? ''); ?>"><input type="hidden" name="payment_notes" value="<?php echo htmlspecialchars($payment['notes'] ?? ''); ?>"><button class="btn btn-sm btn-outline-success" type="submit">Mark Paid</button></form><?php else: ?>-<?php endif; ?></td></tr><?php endforeach; ?>
+                </tbody></table></div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+</div>
+
+<?php foreach (($approvedPurchaseOrders ?? []) as $order): ?>
+    <?php $orderTotal = (float)($order['total_amount'] ?? 0); $scheduledAmount = (float)($order['scheduled_amount'] ?? 0); ?>
+    <div class="modal fade" id="paymentScheduleModal-<?php echo (int)$order['id']; ?>" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog"><div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">Schedule Payment: <?php echo htmlspecialchars($order['po_number'] ?? ''); ?></h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+            <form method="post" action="/ERP/public/modules/accounting/purchase-payment/save">
+                <div class="modal-body"><input type="hidden" name="purchase_order_id" value="<?php echo (int)$order['id']; ?>">
+                    <div class="small text-muted mb-3">Remaining balance: ₦<?php echo number_format(max(0, $orderTotal - $scheduledAmount), 2); ?></div>
+                    <div class="mb-3"><label class="form-label">Payment Date</label><input class="form-control" type="date" name="scheduled_date" value="<?php echo date('Y-m-d'); ?>" required></div>
+                    <div class="mb-3"><label class="form-label">Amount</label><input class="form-control" type="number" name="amount" min="0.01" max="<?php echo number_format(max(0, $orderTotal - $scheduledAmount), 2, '.', ''); ?>" step="0.01" required></div>
+                    <div class="mb-3"><label class="form-label">Status</label><select class="form-select" name="payment_status"><option value="scheduled">Scheduled</option><option value="paid">Paid</option><option value="cancelled">Cancelled</option></select></div>
+                    <div class="mb-3"><label class="form-label">Payment Reference</label><input class="form-control" name="payment_reference"></div>
+                    <div><label class="form-label">Notes</label><textarea class="form-control" name="payment_notes" rows="2"></textarea></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save Payment Schedule</button></div>
+            </form>
+        </div></div>
+    </div>
+<?php endforeach; ?>
+
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         var searchInput = document.getElementById('payrollSearch');
         var rows = Array.from(document.querySelectorAll('#payrollTable tbody tr'));
+        var headerSelectAll = document.querySelector('.payroll-row-select-all');
+        var rowChecks = Array.from(document.querySelectorAll('.payroll-row-select'));
+        var bulkForm = document.getElementById('bulkSendSelectedForm');
+        var bulkSelectedButton = document.getElementById('bulkSendSelectedButton');
+
+        if (headerSelectAll) {
+            headerSelectAll.addEventListener('change', function () {
+                rowChecks.forEach(function (checkbox) {
+                    checkbox.checked = headerSelectAll.checked;
+                });
+            });
+        }
+
+        rowChecks.forEach(function (checkbox) {
+            checkbox.addEventListener('change', function () {
+                if (!checkbox.checked && headerSelectAll) {
+                    headerSelectAll.checked = false;
+                    return;
+                }
+                if (headerSelectAll && rowChecks.every(function (check) { return check.checked; })) {
+                    headerSelectAll.checked = true;
+                }
+            });
+        });
+
+        if (bulkForm && bulkSelectedButton) {
+            bulkSelectedButton.addEventListener('click', function (event) {
+                event.preventDefault();
+                var selectedIds = rowChecks.filter(function (checkbox) { return checkbox.checked; }).map(function (checkbox) { return checkbox.value; });
+
+                if (!selectedIds.length) {
+                    alert('Please select at least one payroll record to send to the portal.');
+                    return;
+                }
+
+                var hiddenInputs = bulkForm.querySelectorAll('input[name="payroll_ids[]"]');
+                hiddenInputs.forEach(function (input) {
+                    input.remove();
+                });
+
+                selectedIds.forEach(function (id) {
+                    var input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'payroll_ids[]';
+                    input.value = id;
+                    bulkForm.appendChild(input);
+                });
+
+                bulkForm.submit();
+            });
+        }
+
         if (!searchInput || rows.length === 0) {
             return;
         }

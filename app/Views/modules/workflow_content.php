@@ -6,6 +6,7 @@ foreach (($roles ?? []) as $role) {
 $parentLinks = $parentLinks ?? [];
 $roleLevels = $roleLevels ?? [];
 $levels = $levels ?? [];
+$managementLevelCount = max(1, (int)($managementLevelCount ?? 3));
 ?>
 <div class="card shadow-sm border-0">
     <div class="card-body p-4">
@@ -48,6 +49,10 @@ $levels = $levels ?? [];
                         <?php endforeach; ?>
                     </div>
                 <?php endif; ?>
+                <form method="post" action="/ERP/public/modules/workflow/management-levels/save" class="row g-2 align-items-end mt-3">
+                    <div class="col-md-5"><label class="form-label mb-1" for="managementLevelCount">Management levels included</label><input id="managementLevelCount" class="form-control" type="number" name="management_level_count" min="1" max="100" value="<?php echo $managementLevelCount; ?>" required></div>
+                    <div class="col-md-7"><div class="form-text mb-2">Roles assigned to the first N workflow levels appear in Management Roles for this company.</div><button class="btn btn-outline-primary" type="submit">Save Management Level Count</button></div>
+                </form>
             </div>
         </div>
 

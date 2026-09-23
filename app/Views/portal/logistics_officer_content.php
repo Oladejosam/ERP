@@ -12,7 +12,6 @@
             <div class="col-md-6 col-xl-4"><a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/modules/inventory"><i class="bi bi-box-seam me-2"></i>Inventory</a></div>
             <div class="col-md-6 col-xl-4"><a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/requisition"><i class="bi bi-file-earmark-text me-2"></i>Requisitions</a></div>
             <div class="col-md-6 col-xl-4"><a class="btn btn-outline-primary w-100 py-3" href="/ERP/public/management/procurement"><i class="bi bi-cart3 me-2"></i>Procurement</a></div>
-            <div class="col-md-6 col-xl-4"><a class="btn btn-outline-success w-100 py-3" href="/ERP/public/modules/projects"><i class="bi bi-kanban me-2"></i>Projects</a></div>
             <div class="col-md-6 col-xl-4"><a class="btn btn-outline-secondary w-100 py-3" href="/ERP/public/modules/chat"><i class="bi bi-chat-dots me-2"></i>Team Chat</a></div>
         </div>
     </div>

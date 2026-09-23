@@ -42,7 +42,6 @@ $routes = [
     '/management/employees/upload_preview' => ['ManagementController', 'previewEmployeeUpload'],
     '/management/employees/upload_confirm' => ['ManagementController', 'confirmEmployeeUpload'],
     '/management/employees/update' => ['ManagementController', 'updateEmployee'],
-    '/management/employees/create-credentials' => ['ManagementController', 'updateEmployee'],
     '/management/employees/deactivate' => ['ManagementController', 'deactivateEmployee'],
     '/management/employees/archive' => ['ManagementController', 'archivedEmployees'],
     '/management/employees/archive_action' => ['ManagementController', 'archiveAction'],

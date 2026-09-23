@@ -26,6 +26,7 @@ class ModuleController extends BaseController
     private ContractAdminModel $contractAdminModel;
     private RequisitionModel $requisitionModel;
     private ChatModel $chatModel;
+    private PurchaseOrderModel $purchaseOrderModel;
     private RmcOperationsModel $rmcOperationsModel;
 
     public function __construct()
@@ -38,6 +39,7 @@ class ModuleController extends BaseController
         $this->contractAdminModel = new ContractAdminModel();
         $this->requisitionModel = new RequisitionModel();
         $this->chatModel = new ChatModel();
+        $this->purchaseOrderModel = new PurchaseOrderModel();
         $this->rmcOperationsModel = new RmcOperationsModel();
     }
 
@@ -404,7 +406,20 @@ class ModuleController extends BaseController
             'parentLinks' => $this->workflowModel->getParentLinks(),
             'roleLevels' => $this->workflowModel->getRoleLevels(),
             'levels' => $this->workflowModel->getLevels(),
+            'managementLevelCount' => $this->workflowModel->getManagementLevelCount(),
         ]);
+    }
+
+    public function saveWorkflowManagementLevelCount(): void
+    {
+        $this->requireSuperAdmin();
+        try {
+            $this->workflowModel->saveManagementLevelCount((int)($_POST['management_level_count'] ?? 0));
+            $_SESSION['workflow_flash'] = 'Management level setting saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['workflow_flash'] = 'Unable to save management level setting: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/workflow');
     }
 
     public function createWorkflowLevel(): void
@@ -598,8 +613,9 @@ class ModuleController extends BaseController
     {
         $this->requireCompanyModule('projects');
         $projectId = (int)($_GET['id'] ?? 0);
-        $employeeSearch = trim((string)($_GET['employee_search'] ?? ''));
-        $employeeStatus = trim((string)($_GET['employee_status'] ?? ''));
+        if ($projectId <= 0) {
+            $this->redirect('/modules/projects');
+        }
         $project = $this->projectModel->getProjectById($projectId);
         if (!$project) {
             $_SESSION['project_flash'] = 'Project not found.';
@@ -610,14 +626,129 @@ class ModuleController extends BaseController
             'title' => 'Project Details',
             'project' => $project,
             'documents' => $this->projectModel->getProjectDocuments($projectId),
-            'assignments' => $this->projectModel->getProjectAssignments($projectId),
-            'schedule' => $this->projectModel->getProjectSchedule($projectId),
-            'employees' => $this->employeeModel->getEmployees($employeeSearch, $employeeStatus),
-            'employeeSearch' => $employeeSearch,
-            'employeeStatus' => $employeeStatus,
             'budgets' => $this->projectModel->getProjectBudgets($projectId),
-            'deletedBudgets' => $this->projectModel->getDeletedProjectBudgets($projectId),
+            'schedule' => $this->projectModel->getProjectSchedule($projectId),
+            'dailyProgress' => $this->projectModel->getProjectDailyProgress($projectId),
+            'delayLogs' => $this->projectModel->getProjectDelayLogs($projectId),
+            'productivity' => $this->projectModel->getProjectProductivity($projectId),
+            'procurementOrders' => $this->projectModel->getProjectProcurementOrders($projectId),
+            'materialReceipts' => $this->projectModel->getProjectMaterialReceipts($projectId),
+            'assignments' => $this->projectModel->getProjectAssignments($projectId),
+            'employees' => $this->employeeModel->getEmployees(null, 'active'),
+            'changeOrders' => $this->projectModel->getProjectChangeOrders($projectId),
+            'safetyLogs' => $this->projectModel->getProjectSafetyLogs($projectId),
+            'rfis' => $this->projectModel->getProjectRFIs($projectId),
+            'costSummary' => $this->projectModel->getProjectCostSummary($projectId),
         ]);
+    }
+
+    public function addProjectChangeOrder(): void
+    {
+        $this->requireCompanyModule('projects');
+        $projectId = (int)($_POST['project_id'] ?? 0);
+        $this->requireVisibleProject($projectId);
+        try {
+            $this->projectModel->addProjectChangeOrder($projectId, $_POST);
+            $_SESSION['project_flash'] = 'Change order recorded successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['project_flash'] = 'Unable to add change order: ' . $exception->getMessage();
+        }
+        $this->redirect('/projects/detail?id=' . $projectId);
+    }
+
+    public function updateProjectChangeOrderStatus(): void
+    {
+        $this->requireCompanyModule('projects');
+        $projectId = (int)($_POST['project_id'] ?? 0);
+        $changeOrderId = (int)($_POST['change_order_id'] ?? 0);
+        $status = trim((string)($_POST['status'] ?? 'pending_approval'));
+        $this->requireVisibleProject($projectId);
+        try {
+            if ($changeOrderId <= 0) {
+                throw new InvalidArgumentException('A valid change order is required.');
+            }
+            $this->projectModel->updateProjectChangeOrderStatus($projectId, $changeOrderId, $status);
+            $_SESSION['project_flash'] = 'Change order status updated successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['project_flash'] = 'Unable to update change order: ' . $exception->getMessage();
+        }
+        $this->redirect('/projects/detail?id=' . $projectId);
+    }
+
+    public function addProjectSafetyLog(): void
+    {
+        $this->requireCompanyModule('projects');
+        $projectId = (int)($_POST['project_id'] ?? 0);
+        $this->requireVisibleProject($projectId);
+        try {
+            $this->projectModel->addProjectSafetyLog($projectId, $_POST);
+            $_SESSION['project_flash'] = 'Safety and compliance log saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['project_flash'] = 'Unable to add safety log: ' . $exception->getMessage();
+        }
+        $this->redirect('/projects/detail?id=' . $projectId);
+    }
+
+    public function addProjectDailyProgress(): void
+    {
+        $this->requireCompanyModule('projects');
+        $projectId = (int)($_POST['project_id'] ?? 0);
+        $this->requireVisibleProject($projectId);
+        try {
+            $this->projectModel->addProjectDailyProgress($projectId, $_POST);
+            $_SESSION['project_flash'] = 'Daily site progress saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['project_flash'] = 'Unable to save daily progress: ' . $exception->getMessage();
+        }
+        $this->redirect('/projects/detail?id=' . $projectId);
+    }
+
+    public function addProjectProductivity(): void
+    {
+        $this->requireCompanyModule('projects');
+        $projectId = (int)($_POST['project_id'] ?? 0);
+        $this->requireVisibleProject($projectId);
+        try {
+            $this->projectModel->addProjectProductivity($projectId, $_POST);
+            $_SESSION['project_flash'] = 'Labor productivity recorded successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['project_flash'] = 'Unable to add productivity record: ' . $exception->getMessage();
+        }
+        $this->redirect('/projects/detail?id=' . $projectId);
+    }
+
+    public function addProjectRfi(): void
+    {
+        $this->requireCompanyModule('projects');
+        $projectId = (int)($_POST['project_id'] ?? 0);
+        $this->requireVisibleProject($projectId);
+        try {
+            $this->projectModel->addProjectRfi($projectId, $_POST);
+            $_SESSION['project_flash'] = 'RFI recorded successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['project_flash'] = 'Unable to add RFI: ' . $exception->getMessage();
+        }
+        $this->redirect('/projects/detail?id=' . $projectId);
+    }
+
+    public function updateProjectRfiStatus(): void
+    {
+        $this->requireCompanyModule('projects');
+        $projectId = (int)($_POST['project_id'] ?? 0);
+        $rfiId = (int)($_POST['rfi_id'] ?? 0);
+        $status = trim((string)($_POST['status'] ?? 'submitted'));
+        $response = trim((string)($_POST['response'] ?? '')) !== '' ? trim((string)($_POST['response'] ?? '')) : null;
+        $this->requireVisibleProject($projectId);
+        try {
+            if ($rfiId <= 0) {
+                throw new InvalidArgumentException('A valid RFI is required.');
+            }
+            $this->projectModel->updateProjectRfiStatus($projectId, $rfiId, $status, $response);
+            $_SESSION['project_flash'] = 'RFI status updated successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['project_flash'] = 'Unable to update RFI: ' . $exception->getMessage();
+        }
+        $this->redirect('/projects/detail?id=' . $projectId);
     }
 
     public function addProjectBudget(): void
@@ -631,7 +762,7 @@ class ModuleController extends BaseController
         } catch (Throwable $exception) {
             $_SESSION['project_flash'] = 'Unable to add budget line: ' . $exception->getMessage();
         }
-        $this->redirect('/modules/projects/view?id=' . $projectId);
+        $this->redirect('/projects/detail?id=' . $projectId);
     }
 
     public function saveProjectSchedule(): void
@@ -645,7 +776,7 @@ class ModuleController extends BaseController
         } catch (Throwable $exception) {
             $_SESSION['project_flash'] = 'Unable to save schedule: ' . $exception->getMessage();
         }
-        $this->redirect('/modules/projects/view?id=' . $projectId);
+        $this->redirect('/projects/detail?id=' . $projectId);
     }
 
     public function deleteProjectBudget(): void
@@ -659,16 +790,17 @@ class ModuleController extends BaseController
         } catch (Throwable $exception) {
             $_SESSION['project_flash'] = 'Unable to delete budget item: ' . $exception->getMessage();
         }
-        $this->redirect('/modules/projects/view?id=' . $projectId);
+        $this->redirect('/modules/projects');
     }
 
     public function assignProjectEmployee(): void
     {
         $this->requireCompanyModule('projects');
-        $this->requireVisibleProject((int)($_POST['project_id'] ?? 0));
+        $projectId = (int)($_POST['project_id'] ?? 0);
+        $this->requireVisibleProject($projectId);
         try {
             $this->projectModel->assignEmployee(
-                (int)($_POST['project_id'] ?? 0),
+                $projectId,
                 (int)($_POST['employee_id'] ?? 0),
                 trim((string)($_POST['job_title'] ?? ''))
             );
@@ -676,7 +808,7 @@ class ModuleController extends BaseController
         } catch (Throwable $exception) {
             $_SESSION['project_flash'] = 'Unable to assign employee: ' . $exception->getMessage();
         }
-        $this->redirect('/modules/projects/view?id=' . (int)($_POST['project_id'] ?? 0));
+        $this->redirect('/projects/detail?id=' . $projectId);
     }
 
     public function removeProjectEmployee(): void
@@ -684,9 +816,13 @@ class ModuleController extends BaseController
         $this->requireCompanyModule('projects');
         $projectId = (int)($_POST['project_id'] ?? 0);
         $this->requireVisibleProject($projectId);
-        $this->projectModel->removeAssignment((int)($_POST['assignment_id'] ?? 0));
-        $_SESSION['project_flash'] = 'Employee removed from the project site.';
-        $this->redirect('/modules/projects/view?id=' . $projectId);
+        try {
+            $this->projectModel->removeAssignment((int)($_POST['assignment_id'] ?? 0));
+            $_SESSION['project_flash'] = 'Employee removed from the project site.';
+        } catch (Throwable $exception) {
+            $_SESSION['project_flash'] = 'Unable to remove employee: ' . $exception->getMessage();
+        }
+        $this->redirect('/projects/detail?id=' . $projectId);
     }
 
     public function projectDocumentDownload(): void
@@ -807,16 +943,20 @@ class ModuleController extends BaseController
             $itemId = (int)($_POST['item_id'] ?? 0);
             $changeReason = trim((string)($_POST['change_reason'] ?? ''));
 
-            if ($itemId > 0) {
-                if ($changeReason === '') {
-                    $_SESSION['inventory_flash'] = 'Please provide a reason for the inventory item change.';
-                    $this->redirect('/inventory/detail?id=' . $itemId);
+            try {
+                if ($itemId > 0) {
+                    if ($changeReason === '') {
+                        $_SESSION['inventory_flash'] = 'Please provide a reason for the inventory item change.';
+                        $this->redirect('/inventory/detail?id=' . $itemId);
+                    }
+                    $this->inventoryModel->updateItem($itemId, $_POST, $changeReason);
+                    $_SESSION['inventory_flash'] = 'Inventory item updated successfully.';
+                } else {
+                    $this->inventoryModel->createItem($_POST);
+                    $_SESSION['inventory_flash'] = 'Item saved successfully.';
                 }
-                $this->inventoryModel->updateItem($itemId, $_POST, $changeReason);
-                $_SESSION['inventory_flash'] = 'Inventory item updated successfully.';
-            } else {
-                $this->inventoryModel->createItem($_POST);
-                $_SESSION['inventory_flash'] = 'Item saved successfully.';
+            } catch (Throwable $exception) {
+                $_SESSION['inventory_flash'] = 'Unable to save inventory item: ' . $exception->getMessage();
             }
         }
         $this->redirect('/modules/inventory');
@@ -905,7 +1045,21 @@ class ModuleController extends BaseController
             'title' => 'Accounting',
             'payrolls' => $payrolls,
             'employees' => $employees,
+            'approvedPurchaseOrders' => $this->purchaseOrderModel->getApprovedPurchaseOrders(),
+            'paymentSchedules' => $this->purchaseOrderModel->getPaymentSchedules(),
         ]);
+    }
+
+    public function savePurchasePaymentSchedule(): void
+    {
+        $this->requireCompanyModule('accounting');
+        try {
+            $this->purchaseOrderModel->savePaymentSchedule($_POST, (int)($_SESSION['user']['id'] ?? 0));
+            $_SESSION['accounting_flash'] = 'Purchase payment schedule saved successfully.';
+        } catch (Throwable $exception) {
+            $_SESSION['accounting_flash'] = 'Unable to save purchase payment schedule: ' . $exception->getMessage();
+        }
+        $this->redirect('/modules/accounting');
     }
 
     public function portalPayroll(): void
@@ -996,8 +1150,16 @@ class ModuleController extends BaseController
     {
         $this->requireCompanyModule('accounting');
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $sentCount = $this->payrollModel->markAllPayrollsSent();
-            $_SESSION['accounting_flash'] = $sentCount > 0 ? "$sentCount payroll records sent to employee portals." : 'No pending payroll records to send.';
+            $selectedIds = array_map('intval', (array)($_POST['payroll_ids'] ?? []));
+            $selectedIds = array_values(array_filter($selectedIds, fn($id) => $id > 0));
+
+            if (!empty($selectedIds)) {
+                $sentCount = $this->payrollModel->markSelectedPayrollsSent($selectedIds);
+                $_SESSION['accounting_flash'] = $sentCount > 0 ? "$sentCount selected payroll records sent to employee portals." : 'No selected payroll records were sent.';
+            } else {
+                $sentCount = $this->payrollModel->markAllPayrollsSent();
+                $_SESSION['accounting_flash'] = $sentCount > 0 ? "$sentCount payroll records sent to employee portals." : 'No pending payroll records to send.';
+            }
         }
         $this->redirect('/modules/accounting');
     }
