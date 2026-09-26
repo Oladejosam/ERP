@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lubell Nigeria Limited | Construction ERP Platform</title>
+    <meta name="description" content="Lubell Nigeria Limited delivers quality construction, design, remodelling, and turnkey project solutions across residential, hospitality, healthcare, industrial, commercial, and educational sectors.">
+    <meta property="og:title" content="Lubell Nigeria Limited | Construction ERP Platform">
+    <meta property="og:description" content="Enterprise-grade construction operations, procurement, inventory, and engineering management system.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --lubell-dark: #0d1b2a;
+            --lubell-navy: #14213d;
+            --lubell-gold: #d4a447;
+            --lubell-gold-soft: #f3d79b;
+            --lubell-slate: #f4f6f8;
+            --lubell-muted: #556273;
+            --lubell-card: #ffffff;
+            --lubell-success: #1c9a6b;
+            --shadow-soft: 0 18px 45px rgba(15, 23, 42, 0.08);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #ffffff;
+            color: var(--lubell-dark);
+            line-height: 1.6;
+        }
+        a { text-decoration: none; }
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 1030;
+            background: rgba(13, 27, 42, 0.96);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .hero {
+            background: radial-gradient(circle at top right, rgba(212, 164, 71, 0.15), transparent 50%),
+                        linear-gradient(135deg, #07111f 0%, #0d1b2a 50%, #172554 100%);
+            color: #ffffff;
+            padding: 85px 0 100px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(6px);
+            transition: transform 0.2s ease;
+        }
+        .stat-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--lubell-gold);
+        }
+        .feature-card {
+            background: var(--lubell-card);
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 32px 28px;
+            height: 100%;
+            transition: all 0.25s ease;
+        }
+        .feature-card:hover {
+            box-shadow: var(--shadow-soft);
+            transform: translateY(-5px);
+            border-color: #cbd5e1;
+        }
+        .role-portal-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 20px;
+            transition: all 0.2s ease;
+        }
+        .role-portal-card:hover {
+            background: #ffffff;
+            border-color: var(--lubell-gold);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.06);
+        }
+    </style>
+</head>
+<body>
+
+<header class="topbar py-3">
+    <div class="container d-flex align-items-center justify-content-between">
+        <a class="d-flex align-items-center gap-2 text-white fw-bold fs-4" href="/">
+            <i class="bi bi-buildings-fill text-warning"></i>
+            <span><%= company.company_name %></span>
+        </a>
+        <div class="d-flex align-items-center gap-3">
+            <a href="/login" class="btn btn-outline-light btn-sm px-3 rounded-pill">Sign In</a>
+            <a href="/dashboard" class="btn btn-warning btn-sm px-4 rounded-pill fw-semibold"><i class="bi bi-speedometer2 me-1"></i>Open ERP</a>
+        </div>
+    </div>
+</header>
+
+<section class="hero text-center text-lg-start">
+    <div class="container">
+        <div class="row align-items-center gy-5">
+            <div class="col-lg-7">
+                <span class="badge bg-warning text-dark px-3 py-2 rounded-pill fw-bold text-uppercase mb-3">Enterprise Construction Suite</span>
+                <h1 class="display-4 fw-black text-white mb-3" style="font-weight: 800; letter-spacing: -0.03em;">
+                    Precision Engineering & Integrated Operations
+                </h1>
+                <p class="lead text-light opacity-75 mb-4" style="max-width: 600px;">
+                    Comprehensive ERP platform built for civil engineering contractors, ready-mix concrete suppliers, and infrastructure developers. Seamlessly orchestrate budgets, procurement, requisitions, inventory, and site execution.
+                </p>
+                <div class="d-flex flex-wrap gap-3 justify-content-center justify-content-lg-start">
+                    <a href="/login" class="btn btn-warning btn-lg px-4 py-3 rounded-pill fw-bold text-dark shadow">
+                        <i class="bi bi-box-arrow-in-right me-2"></i>Access ERP System
+                    </a>
+                    <a href="/dashboard" class="btn btn-outline-light btn-lg px-4 py-3 rounded-pill fw-semibold">
+                        <i class="bi bi-grid-3x3-gap me-2"></i>Live Operations Dashboard
+                    </a>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="p-4 rounded-4" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15);">
+                    <h5 class="text-warning mb-3 fw-bold"><i class="bi bi-person-badge me-2"></i>Quick Role Gateway</h5>
+                    <p class="small text-white-50 mb-3">Select any verified operational role to immediately explore tailored workflows:</p>
+                    <div class="d-grid gap-2">
+                        <a href="/login?quick=md" class="btn btn-dark text-start border-secondary p-2 d-flex align-items-center justify-content-between">
+                            <span><i class="bi bi-briefcase text-info me-2"></i>Managing Director</span>
+                            <span class="badge bg-info-subtle text-info">Executive</span>
+                        </a>
+                        <a href="/login?quick=site_engineer" class="btn btn-dark text-start border-secondary p-2 d-flex align-items-center justify-content-between">
+                            <span><i class="bi bi-cone-striped text-warning me-2"></i>Site Engineer</span>
+                            <span class="badge bg-warning-subtle text-warning">Field Tech</span>
+                        </a>
+                        <a href="/login?quick=procurement" class="btn btn-dark text-start border-secondary p-2 d-flex align-items-center justify-content-between">
+                            <span><i class="bi bi-cart3 text-primary me-2"></i>Procurement Officer</span>
+                            <span class="badge bg-primary-subtle text-primary">Purchasing</span>
+                        </a>
+                        <a href="/login?quick=accountant" class="btn btn-dark text-start border-secondary p-2 d-flex align-items-center justify-content-between">
+                            <span><i class="bi bi-receipt text-success me-2"></i>Accountant</span>
+                            <span class="badge bg-success-subtle text-success">Finance</span>
+                        </a>
+                        <a href="/login?quick=superadmin" class="btn btn-dark text-start border-secondary p-2 d-flex align-items-center justify-content-between">
+                            <span><i class="bi bi-shield-lock text-danger me-2"></i>Super Administrator</span>
+                            <span class="badge bg-danger-subtle text-danger">Full Root</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mt-5">
+            <div class="col-md-3">
+                <div class="stat-card text-center text-md-start">
+                    <h3 class="fw-bold text-warning mb-0">₦1.8B+</h3>
+                    <small class="text-white-50">Active Project Portfolio</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card text-center text-md-start">
+                    <h3 class="fw-bold text-success mb-0">99.4%</h3>
+                    <small class="text-white-50">On-Site Safety Rating</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card text-center text-md-start">
+                    <h3 class="fw-bold text-info mb-0">100%</h3>
+                    <small class="text-white-50">Digital Waybill Audit Trail</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card text-center text-md-start">
+                    <h3 class="fw-bold text-light mb-0">Multi-Site</h3>
+                    <small class="text-white-50">Abuja, Lagos, Port Harcourt</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="py-5 bg-light">
+    <div class="container py-4">
+        <div class="text-center max-w-700 mx-auto mb-5">
+            <span class="badge bg-primary-subtle text-primary px-3 py-2 rounded-pill fw-semibold">Platform Capabilities</span>
+            <h2 class="fw-bold mt-2">End-to-End Construction ERP Modules</h2>
+            <p class="text-muted">Built specifically for the rigors of heavy civil engineering and site logistics.</p>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <div class="mb-3 text-primary fs-2"><i class="bi bi-building-gear"></i></div>
+                    <h4 class="fw-bold">Project Management</h4>
+                    <p class="text-muted">Track bill of quantities (BOQ), labor & material budget tracking, daily progress logs, and client change orders.</p>
+                    <a href="/modules/projects" class="fw-semibold text-primary">Open Projects <i class="bi bi-arrow-right"></i></a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <div class="mb-3 text-warning fs-2"><i class="bi bi-box-seam"></i></div>
+                    <h4 class="fw-bold">Warehouse & Inventory</h4>
+                    <p class="text-muted">Automated reorder alerts, batch tracking for cement and steel rebar, bin management, and stock allocation.</p>
+                    <a href="/modules/inventory" class="fw-semibold text-warning">Open Inventory <i class="bi bi-arrow-right"></i></a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <div class="mb-3 text-success fs-2"><i class="bi bi-file-earmark-check"></i></div>
+                    <h4 class="fw-bold">Requisitions & Approvals</h4>
+                    <p class="text-muted">Multi-tier approval workflows from site engineer to procurement officer to MD, with instant waybills.</p>
+                    <a href="/requisition" class="fw-semibold text-success">Open Requisitions <i class="bi bi-arrow-right"></i></a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <div class="mb-3 text-danger fs-2"><i class="bi bi-cart3"></i></div>
+                    <h4 class="fw-bold">Procurement & POs</h4>
+                    <p class="text-muted">Generate formal purchase orders, match supplier delivery waybills, track partial deliveries, and verify invoices.</p>
+                    <a href="/management/procurement" class="fw-semibold text-danger">Open Procurement <i class="bi bi-arrow-right"></i></a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <div class="mb-3 text-info fs-2"><i class="bi bi-people"></i></div>
+                    <h4 class="fw-bold">HR & Payroll</h4>
+                    <p class="text-muted">Employee personnel records, salary structures, loan repayments, salary advances, and automated payslip generation.</p>
+                    <a href="/management/employees" class="fw-semibold text-info">Open HR <i class="bi bi-arrow-right"></i></a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="feature-card">
+                    <div class="mb-3 text-secondary fs-2"><i class="bi bi-cash-stack"></i></div>
+                    <h4 class="fw-bold">Accounting & Billing</h4>
+                    <p class="text-muted">Financial performance tracking, contractor interim payment certificates (IPC), accounts payable, and audit trails.</p>
+                    <a href="/modules/accounting" class="fw-semibold text-secondary">Open Accounting <i class="bi bi-arrow-right"></i></a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<footer class="bg-dark text-white py-4 border-top border-secondary">
+    <div class="container d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-buildings-fill text-warning fs-5"></i>
+            <span class="fw-bold"><%= company.company_name %></span>
+            <span class="text-white-50">| Construction ERP System v1.0.0</span>
+        </div>
+        <div class="text-white-50 small">
+            &copy; <%= new Date().getFullYear() %> <%= company.company_name %>. All rights reserved.
+        </div>
+    </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

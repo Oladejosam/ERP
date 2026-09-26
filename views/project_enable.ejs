@@ -1,0 +1,395 @@
+<%- include('layouts/header') %>
+<%- include('layouts/sidebar') %>
+
+<main class="col-lg-10 p-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <a class="btn btn-outline-secondary btn-sm rounded-3" href="/modules/projects">
+                    <i class="bi bi-arrow-left me-1"></i>Projects
+                </a>
+                <h2 class="fw-bold mb-0">Project Enable & Documentation</h2>
+                <span class="badge bg-primary-subtle text-primary px-3 py-1 rounded-pill border border-primary-subtle">
+                    <i class="bi bi-folder-check me-1"></i>Document Management
+                </span>
+            </div>
+            <p class="text-muted mb-0">
+                Centralized statutory, architectural, engineering, and mobilization files for <strong><%= company.company_name %></strong>.
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary rounded-3 shadow-sm" type="button" data-bs-toggle="modal" data-bs-target="#uploadDocModal">
+                <i class="bi bi-cloud-arrow-up me-1"></i>Upload Document
+            </button>
+            <a href="/modules/projects" class="btn btn-outline-secondary rounded-3">
+                <i class="bi bi-building me-1"></i>Project Portfolio
+            </a>
+        </div>
+    </div>
+
+    <% if (typeof flash !== 'undefined' && flash) { %>
+        <div class="alert alert-<%= flash.type || 'success' %> alert-dismissible fade show rounded-3 shadow-sm border-0" role="alert">
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi <%= flash.type === 'danger' ? 'bi-exclamation-triangle-fill text-danger' : 'bi-check-circle-fill text-success' %> fs-5"></i>
+                <div><%= flash.message || flash %></div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <% } %>
+
+    <!-- Project Selector Bar -->
+    <div class="card shadow-sm border-0 rounded-4 bg-white p-3 mb-4">
+        <form method="get" action="/modules/project-enable" class="row g-3 align-items-center">
+            <div class="col-md-5">
+                <label class="form-label small fw-semibold text-muted mb-1">Filter by Project</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-building"></i></span>
+                    <select class="form-select border-start-0" name="project_id" onchange="this.form.submit()">
+                        <option value="">-- All Company Projects --</option>
+                        <% projects.forEach(function(p) { %>
+                            <option value="<%= p.id %>" <%= selectedProjectId == p.id ? 'selected' : '' %>>
+                                <%= p.project_number %> &bull; <%= p.name %> (<%= p.site_location %>)
+                            </option>
+                        <% }); %>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-semibold text-muted mb-1">Filter by Category</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-funnel"></i></span>
+                    <select class="form-select border-start-0" name="category" onchange="this.form.submit()">
+                        <option value="">-- All Categories --</option>
+                        <option value="Statutory Approvals & Permits" <%= selectedCategory === 'Statutory Approvals & Permits' ? 'selected' : '' %>>Statutory Approvals & Permits</option>
+                        <option value="Engineering & Architectural Drawings" <%= selectedCategory === 'Engineering & Architectural Drawings' ? 'selected' : '' %>>Engineering & Architectural Drawings</option>
+                        <option value="HSE & Site Safety Plans" <%= selectedCategory === 'HSE & Site Safety Plans' ? 'selected' : '' %>>HSE & Site Safety Plans</option>
+                        <option value="Survey & Geotechnical Reports" <%= selectedCategory === 'Survey & Geotechnical Reports' ? 'selected' : '' %>>Survey & Geotechnical Reports</option>
+                        <option value="Contract Agreement & Addenda" <%= selectedCategory === 'Contract Agreement & Addenda' ? 'selected' : '' %>>Contract Agreement & Addenda</option>
+                        <option value="BOQ & Cost Estimates" <%= selectedCategory === 'BOQ & Cost Estimates' ? 'selected' : '' %>>BOQ & Cost Estimates</option>
+                        <option value="Site Mobilization Waybills" <%= selectedCategory === 'Site Mobilization Waybills' ? 'selected' : '' %>>Site Mobilization Waybills</option>
+                        <option value="Other" <%= selectedCategory === 'Other' ? 'selected' : '' %>>Other</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-3 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-filter me-1"></i>Apply Filter
+                </button>
+                <% if (selectedProjectId || selectedCategory) { %>
+                    <a href="/modules/project-enable" class="btn btn-light text-muted" title="Reset Filters">
+                        <i class="bi bi-x-circle"></i>
+                    </a>
+                <% } %>
+            </div>
+        </form>
+    </div>
+
+    <!-- Active Project Details Card if filtered -->
+    <% if (activeProject) { %>
+        <div class="card shadow-sm border-0 rounded-4 bg-primary text-white p-4 mb-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                <div>
+                    <span class="badge bg-warning text-dark font-monospace mb-2"><%= activeProject.project_number %></span>
+                    <h3 class="fw-bold mb-1"><%= activeProject.name %></h3>
+                    <p class="mb-0 text-white-50">
+                        <i class="bi bi-geo-alt me-1"></i><%= activeProject.site_location %> &bull; Client: <strong><%= activeProject.client_name %></strong>
+                    </p>
+                </div>
+                <div class="d-flex gap-4">
+                    <div class="text-md-end">
+                        <small class="text-white-50 d-block">Progress</small>
+                        <span class="fs-4 fw-bold"><%= activeProject.progress_percent %>%</span>
+                    </div>
+                    <div class="text-md-end">
+                        <small class="text-white-50 d-block">Contract Value</small>
+                        <span class="fs-4 fw-bold">₦<%= (activeProject.contract_value).toLocaleString('en-US') %></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <% } %>
+
+    <!-- KPI Summary Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 rounded-4 bg-white p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <small class="text-muted fw-semibold">Total Documents</small>
+                        <h4 class="fw-bold mb-0 text-dark"><%= documents.length %></h4>
+                    </div>
+                    <div class="p-3 bg-primary-subtle text-primary rounded-3 fs-4">
+                        <i class="bi bi-files"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 rounded-4 bg-white p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <small class="text-muted fw-semibold">Statutory & Permits</small>
+                        <h4 class="fw-bold mb-0 text-dark">
+                            <%= documents.filter(d => d.category.includes('Permit') || d.category.includes('Statutory')).length %>
+                        </h4>
+                    </div>
+                    <div class="p-3 bg-success-subtle text-success rounded-3 fs-4">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 rounded-4 bg-white p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <small class="text-muted fw-semibold">AFC Drawings</small>
+                        <h4 class="fw-bold mb-0 text-dark">
+                            <%= documents.filter(d => d.category.includes('Drawings') || d.category.includes('Engineering')).length %>
+                        </h4>
+                    </div>
+                    <div class="p-3 bg-info-subtle text-info rounded-3 fs-4">
+                        <i class="bi bi-rulers"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 rounded-4 bg-white p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <small class="text-muted fw-semibold">HSE Safety Plans</small>
+                        <h4 class="fw-bold mb-0 text-dark">
+                            <%= documents.filter(d => d.category.includes('Safety') || d.category.includes('HSE')).length %>
+                        </h4>
+                    </div>
+                    <div class="p-3 bg-warning-subtle text-warning rounded-3 fs-4">
+                        <i class="bi bi-cone-striped"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Documents Listing Table -->
+    <div class="card shadow-sm border-0 rounded-4 bg-white">
+        <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-2">
+                <h5 class="fw-bold mb-0"><i class="bi bi-file-earmark-text me-2 text-primary"></i>Project Enable Documents</h5>
+                <span class="badge bg-secondary-subtle text-secondary"><%= documents.length %> records</span>
+            </div>
+            <button class="btn btn-sm btn-primary rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#uploadDocModal">
+                <i class="bi bi-plus-lg me-1"></i>Add File
+            </button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-4">Document Title & Original Name</th>
+                            <th>Project</th>
+                            <th>Category</th>
+                            <th>File Format</th>
+                            <th>Size</th>
+                            <th>Uploaded By</th>
+                            <th>Upload Date</th>
+                            <th class="text-end pe-4">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% if (!documents || documents.length === 0) { %>
+                            <tr>
+                                <td colspan="8" class="text-center py-5 text-muted">
+                                    <i class="bi bi-folder-x fs-1 d-block mb-2 text-secondary opacity-50"></i>
+                                    <div class="fw-semibold">No project enable documents found</div>
+                                    <small class="text-muted">Upload project drawings, statutory clearances, or safety plans using the button above.</small>
+                                </td>
+                            </tr>
+                        <% } else { %>
+                            <% documents.forEach(function(doc) { 
+                                const proj = projects.find(p => p.id === doc.related_id);
+                                const isPdf = doc.file_type === 'application/pdf' || (doc.original_name && doc.original_name.toLowerCase().endsWith('.pdf'));
+                                const isImg = doc.file_type && doc.file_type.startsWith('image/');
+                                const isViewable = isPdf || isImg || (doc.original_name && (doc.original_name.endsWith('.txt') || doc.original_name.endsWith('.png') || doc.original_name.endsWith('.jpg') || doc.original_name.endsWith('.webp')));
+                            %>
+                                <tr>
+                                    <td class="ps-4">
+                                        <div class="d-flex align-items-center gap-3">
+                                            <div class="fs-3 text-secondary">
+                                                <% if (isPdf) { %>
+                                                    <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
+                                                <% } else if (isImg) { %>
+                                                    <i class="bi bi-file-earmark-image-fill text-info"></i>
+                                                <% } else if (doc.original_name && (doc.original_name.endsWith('.xls') || doc.original_name.endsWith('.xlsx') || doc.original_name.endsWith('.csv'))) { %>
+                                                    <i class="bi bi-file-earmark-spreadsheet-fill text-success"></i>
+                                                <% } else if (doc.original_name && (doc.original_name.endsWith('.doc') || doc.original_name.endsWith('.docx'))) { %>
+                                                    <i class="bi bi-file-earmark-word-fill text-primary"></i>
+                                                <% } else { %>
+                                                    <i class="bi bi-file-earmark-text-fill text-secondary"></i>
+                                                <% } %>
+                                            </div>
+                                            <div>
+                                                <div class="fw-bold text-dark"><%= doc.title %></div>
+                                                <small class="text-muted font-monospace"><%= doc.original_name %></small>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <% if (proj) { %>
+                                            <div class="fw-semibold text-truncate" style="max-width: 180px;" title="<%= proj.name %>">
+                                                <%= proj.name %>
+                                            </div>
+                                            <small class="text-muted"><%= proj.project_number %></small>
+                                        <% } else { %>
+                                            <span class="text-muted">General Project</span>
+                                        <% } %>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark border">
+                                            <%= doc.category %>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary-subtle text-secondary font-monospace">
+                                            <% if (doc.original_name) { %>
+                                                <%= doc.original_name.split('.').pop().toUpperCase() %>
+                                            <% } else { %>
+                                                FILE
+                                            <% } %>
+                                        </span>
+                                    </td>
+                                    <td class="small text-muted fw-semibold">
+                                        <% if (doc.file_size) { %>
+                                            <%= (doc.file_size >= 1048576) ? (doc.file_size / 1048576).toFixed(2) + ' MB' : (doc.file_size / 1024).toFixed(1) + ' KB' %>
+                                        <% } else { %>
+                                            -
+                                        <% } %>
+                                    </td>
+                                    <td>
+                                        <div class="small fw-semibold text-dark"><%= doc.uploaded_by_name || 'System' %></div>
+                                    </td>
+                                    <td class="small text-muted">
+                                        <%= doc.created_at %>
+                                    </td>
+                                    <td class="text-end pe-4">
+                                        <div class="btn-group btn-group-sm">
+                                            <% if (isViewable) { %>
+                                                <a href="/projects/enable/view/<%= doc.id %>" target="_blank" class="btn btn-outline-info" title="View / Preview File">
+                                                    <i class="bi bi-eye"></i> View
+                                                </a>
+                                            <% } %>
+                                            <a href="/projects/enable/download/<%= doc.id %>" class="btn btn-outline-primary" title="Download File Securely">
+                                                <i class="bi bi-download"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-outline-danger" title="Delete File" data-bs-toggle="modal" data-bs-target="#deleteDocModal<%= doc.id %>">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+
+                                        <!-- Delete Confirmation Modal -->
+                                        <div class="modal fade" id="deleteDocModal<%= doc.id %>" tabindex="-1" aria-hidden="true">
+                                            <div class="modal-dialog modal-dialog-centered">
+                                                <div class="modal-content rounded-4 text-start">
+                                                    <div class="modal-header border-0 pb-0">
+                                                        <h5 class="modal-title fw-bold text-danger">
+                                                            <i class="bi bi-exclamation-triangle-fill me-2"></i>Confirm Document Deletion
+                                                        </h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body py-3">
+                                                        <p class="mb-2">Are you sure you want to permanently delete this document?</p>
+                                                        <div class="p-3 bg-light rounded-3 border">
+                                                            <div class="fw-bold text-dark"><%= doc.title %></div>
+                                                            <small class="text-muted"><%= doc.original_name %> &bull; <%= (doc.file_size >= 1048576) ? (doc.file_size / 1048576).toFixed(2) + ' MB' : (doc.file_size / 1024).toFixed(1) + ' KB' %></small>
+                                                        </div>
+                                                        <small class="text-danger mt-2 d-block">This action cannot be undone and will delete the physical file from the server.</small>
+                                                    </div>
+                                                    <div class="modal-footer border-0 pt-0">
+                                                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                                                        <form method="post" action="/projects/enable/delete/<%= doc.id %>">
+                                                            <button type="submit" class="btn btn-danger fw-semibold">
+                                                                <i class="bi bi-trash me-1"></i>Delete Document
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <% }); %>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- Upload Document Modal -->
+<div class="modal fade" id="uploadDocModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content rounded-4 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-cloud-arrow-up me-2 text-primary"></i>Upload Project Enable Document</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="/projects/enable/upload" enctype="multipart/form-data">
+                <div class="modal-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label fw-semibold" for="docProjectSelect">Associated Project <span class="text-danger">*</span></label>
+                            <select class="form-select" id="docProjectSelect" name="project_id" required>
+                                <% projects.forEach(function(p) { %>
+                                    <option value="<%= p.id %>" <%= (selectedProjectId == p.id) ? 'selected' : '' %>>
+                                        <%= p.project_number %> &bull; <%= p.name %> (<%= p.site_location %>)
+                                    </option>
+                                <% }); %>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" for="docTitle">Document Title <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="docTitle" name="title" placeholder="e.g. Environmental Clearance Permit" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" for="docCategory">Document Category <span class="text-danger">*</span></label>
+                            <select class="form-select" id="docCategory" name="category" required>
+                                <option value="Statutory Approvals & Permits">Statutory Approvals & Permits</option>
+                                <option value="Engineering & Architectural Drawings">Engineering & Architectural Drawings</option>
+                                <option value="HSE & Site Safety Plans">HSE & Site Safety Plans</option>
+                                <option value="Survey & Geotechnical Reports">Survey & Geotechnical Reports</option>
+                                <option value="Contract Agreement & Addenda">Contract Agreement & Addenda</option>
+                                <option value="BOQ & Cost Estimates">BOQ & Cost Estimates</option>
+                                <option value="Site Mobilization Waybills">Site Mobilization Waybills</option>
+                                <option value="Other">Other Project Documentation</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" for="docFile">Select File <span class="text-danger">*</span></label>
+                            <div class="border rounded-3 p-3 bg-light text-center">
+                                <input type="file" class="form-control mb-2" id="docFile" name="document_file" required accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.webp,.txt,.dwg">
+                                <div class="small text-muted">
+                                    <i class="bi bi-shield-lock me-1 text-success"></i>
+                                    Supported: PDF, DOC, DOCX, XLS, XLSX, CSV, JPG, PNG, WEBP, TXT, DWG. Max size: 25 MB.
+                                    <span class="text-danger fw-semibold d-block mt-1">Executable files (.php, .exe, .sh, etc.) are strictly prohibited.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light rounded-bottom-4">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold px-4">
+                        <i class="bi bi-upload me-1"></i>Upload & Register File
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<%- include('layouts/footer') %>

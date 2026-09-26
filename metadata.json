@@ -1,0 +1,6 @@
+{
+  "name": "Construction ERP System",
+  "description": "Enterprise-grade ERP platform for construction companies featuring project management, inventory, procurement, requisitions, HR, and role-based portals.",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

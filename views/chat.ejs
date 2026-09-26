@@ -1,0 +1,91 @@
+<%- include('layouts/header') %>
+<%- include('layouts/sidebar') %>
+
+<main class="col-lg-10 p-4">
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="window.history.back();">
+        <i class="bi bi-arrow-left"></i> Back
+    </button>
+
+    <div class="card shadow-sm border-0 rounded-4 bg-white" style="height: calc(100vh - 180px);">
+        <div class="row g-0 h-100">
+            <!-- Channels Sidebar -->
+            <div class="col-md-4 col-lg-3 border-end h-100 p-3 d-flex flex-column">
+                <h5 class="fw-bold mb-3"><i class="bi bi-chat-square-dots me-2 text-primary"></i>Team Chat</h5>
+                <div class="mb-3">
+                    <small class="text-uppercase text-muted fw-bold" style="font-size: 0.7rem;">Channels</small>
+                    <div class="list-group list-group-flush mt-2">
+                        <a href="/modules/chat?channel=general" class="list-group-item list-group-item-action border-0 rounded-3 active fw-semibold">
+                            <i class="bi bi-hash me-2"></i>general
+                        </a>
+                        <a href="/modules/chat?channel=site-operations" class="list-group-item list-group-item-action border-0 rounded-3 text-secondary">
+                            <i class="bi bi-hash me-2"></i>site-operations
+                        </a>
+                        <a href="/modules/chat?channel=procurement" class="list-group-item list-group-item-action border-0 rounded-3 text-secondary">
+                            <i class="bi bi-hash me-2"></i>procurement
+                        </a>
+                        <a href="/modules/chat?channel=management" class="list-group-item list-group-item-action border-0 rounded-3 text-secondary">
+                            <i class="bi bi-lock me-2"></i>executive-board
+                        </a>
+                    </div>
+                </div>
+
+                <div class="mt-auto pt-3 border-top">
+                    <small class="text-uppercase text-muted fw-bold" style="font-size: 0.7rem;">Online Colleagues</small>
+                    <div class="d-flex align-items-center gap-2 mt-2">
+                        <span class="badge rounded-circle p-1 bg-success"></span>
+                        <small class="text-dark fw-semibold"><%= user.name %></small>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 mt-1">
+                        <span class="badge rounded-circle p-1 bg-success"></span>
+                        <small class="text-muted">Engr. David Okon</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 mt-1">
+                        <span class="badge rounded-circle p-1 bg-success"></span>
+                        <small class="text-muted">Alhaji Ibrahim Usman</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Message Feed -->
+            <div class="col-md-8 col-lg-9 h-100 d-flex flex-column">
+                <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-light">
+                    <div>
+                        <h6 class="fw-bold mb-0"><i class="bi bi-hash text-primary me-1"></i>#general</h6>
+                        <small class="text-muted">Company-wide operational announcements and site coordination</small>
+                    </div>
+                    <span class="badge bg-success-subtle text-success"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i>Live</span>
+                </div>
+
+                <!-- Messages Stream -->
+                <div class="p-4 flex-grow-1 overflow-auto d-flex flex-column gap-3" id="messageStream">
+                    <% chatMessages.forEach(function(msg) { %>
+                        <div class="p-3 rounded-3 border <%= msg.sender_id === user.id ? 'bg-primary-subtle border-primary-subtle ms-auto' : 'bg-light border-light' %>" style="max-width: 75%;">
+                            <div class="d-flex justify-content-between align-items-center gap-3 mb-1">
+                                <span class="fw-bold small <%= msg.sender_id === user.id ? 'text-primary' : 'text-dark' %>"><%= msg.sender_name %></span>
+                                <small class="text-muted" style="font-size: 0.7rem;"><%= msg.timestamp %></small>
+                            </div>
+                            <p class="mb-0 text-dark"><%= msg.text %></p>
+                        </div>
+                    <% }); %>
+                </div>
+
+                <!-- Message Input -->
+                <div class="p-3 border-top bg-white">
+                    <form method="post" action="/modules/chat/send" class="d-flex gap-2">
+                        <input class="form-control" name="text" placeholder="Type an operational update or message to team..." autocomplete="off" required>
+                        <button type="submit" class="btn btn-primary px-4 fw-semibold"><i class="bi bi-send-fill me-1"></i>Send</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        const stream = document.getElementById('messageStream');
+        if (stream) { stream.scrollTop = stream.scrollHeight; }
+    });
+</script>
+
+<%- include('layouts/footer') %>

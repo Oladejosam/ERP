@@ -1,0 +1,277 @@
+<%- include('layouts/header') %>
+<%- include('layouts/sidebar') %>
+
+<main class="col-lg-10 p-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <a class="btn btn-outline-secondary btn-sm" href="/modules/projects">
+            <i class="bi bi-arrow-left me-1"></i>Back to Projects
+        </a>
+        <div class="badge bg-primary-subtle text-primary fs-6 px-3 py-2 text-capitalize">
+            Status: <%= project.status.replace('_', ' ') %>
+        </div>
+    </div>
+
+    <% if (typeof flash !== 'undefined' && flash) { %>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="bi bi-check-circle me-2"></i><%= flash %>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <% } %>
+
+    <div class="row g-4">
+        <!-- Project Header Details -->
+        <div class="col-12">
+            <div class="card shadow-sm border-0 rounded-4 bg-white p-4">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3">
+                    <div>
+                        <span class="badge bg-secondary font-monospace mb-2"><%= project.project_number %></span>
+                        <h2 class="fw-bold mb-1"><%= project.name %></h2>
+                        <p class="text-muted mb-0"><i class="bi bi-geo-alt text-danger me-1"></i><%= project.site_location %> &bull; Client: <strong><%= project.client_name %></strong></p>
+                    </div>
+                    <div class="text-md-end">
+                        <small class="text-muted d-block">Overall Progress</small>
+                        <h3 class="fw-bold text-success mb-1"><%= project.progress_percent %>%</h3>
+                        <div class="progress" style="width: 160px; height: 8px;">
+                            <div class="progress-bar bg-success" style="width: <%= project.progress_percent %>%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3 mt-4 pt-3 border-top">
+                    <div class="col-md-3">
+                        <small class="text-muted d-block">Contract Value</small>
+                        <span class="fw-bold fs-5 text-primary">₦<%= (project.contract_value).toLocaleString('en-US') %></span>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted d-block">Total Budget</small>
+                        <span class="fw-bold fs-5 text-dark">₦<%= (project.budget).toLocaleString('en-US') %></span>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted d-block">Schedule Duration</small>
+                        <span class="fw-semibold text-secondary"><%= project.start_date %> to <%= project.end_date %></span>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted d-block">Lead Consultant</small>
+                        <span class="fw-semibold text-secondary"><%= project.consultant || 'In-House Supervision' %></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Budget Lines -->
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0 rounded-4 bg-white">
+                <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0"><i class="bi bi-receipt-cutoff me-2 text-primary"></i>Budget & Bill of Quantities (BOQ)</h5>
+                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addBudgetModal">
+                        <i class="bi bi-plus-lg me-1"></i>Add Item
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-4">Item Name</th>
+                                    <th>Category</th>
+                                    <th>Quantity</th>
+                                    <th>Unit Rate</th>
+                                    <th>Total Cost</th>
+                                    <th class="pe-4">Supplier</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% if (!project.budgets || project.budgets.length === 0) { %>
+                                    <tr><td colspan="6" class="text-center text-muted py-4">No budget lines configured yet.</td></tr>
+                                <% } else { %>
+                                    <% project.budgets.forEach(function(b) { %>
+                                        <tr>
+                                            <td class="ps-4 fw-semibold"><%= b.budget_name %></td>
+                                            <td><span class="badge bg-light text-dark border"><%= b.category %></span></td>
+                                            <td><%= b.quantity %> <%= b.unit_of_measure %></td>
+                                            <td>₦<%= (b.unit_cost).toLocaleString('en-US') %></td>
+                                            <td class="fw-bold text-dark">₦<%= (b.total_cost).toLocaleString('en-US') %></td>
+                                            <td class="pe-4 small text-muted"><%= b.supplier || 'N/A' %></td>
+                                        </tr>
+                                    <% }); %>
+                                <% } %>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Daily Site Logs -->
+            <div class="card shadow-sm border-0 rounded-4 bg-white mt-4">
+                <div class="card-header bg-white border-0 py-3 px-4 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0"><i class="bi bi-journal-text me-2 text-warning"></i>Daily Site Reports</h5>
+                    <button class="btn btn-sm btn-outline-warning text-dark" data-bs-toggle="modal" data-bs-target="#addSiteLogModal">
+                        <i class="bi bi-plus-lg me-1"></i>Add Daily Report
+                    </button>
+                </div>
+                <div class="card-body p-4 pt-0">
+                    <% if (!project.site_logs || project.site_logs.length === 0) { %>
+                        <div class="text-center text-muted py-4">No daily logs recorded for this site yet.</div>
+                    <% } else { %>
+                        <% project.site_logs.forEach(function(log) { %>
+                            <div class="p-3 mb-3 rounded-3 bg-light border">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="fw-bold text-dark"><i class="bi bi-calendar3 me-1"></i><%= log.log_date %></span>
+                                    <span class="badge bg-info-subtle text-info"><i class="bi bi-cloud-sun me-1"></i><%= log.weather %></span>
+                                </div>
+                                <p class="mb-2 text-secondary"><%= log.completed_work %></p>
+                                <div class="row g-2 small text-muted pt-2 border-top">
+                                    <div class="col-md-6"><strong>Manpower:</strong> <%= log.manpower %></div>
+                                    <div class="col-md-6"><strong>Machinery:</strong> <%= log.equipment %></div>
+                                    <div class="col-12 text-success"><strong>Safety Note:</strong> <%= log.safety_note %></div>
+                                </div>
+                            </div>
+                        <% }); %>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar / Actions -->
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 rounded-4 bg-white p-4">
+                <h5 class="fw-bold mb-3"><i class="bi bi-sliders me-2 text-primary"></i>Update Progress</h5>
+                <form method="post" action="/projects/schedule/save">
+                    <input type="hidden" name="project_id" value="<%= project.id %>">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Current Progress Percentage (%)</label>
+                        <input type="number" min="0" max="100" class="form-control" name="progress_percent" value="<%= project.progress_percent %>" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Status</label>
+                        <select class="form-select" name="status">
+                            <option value="in_progress" <%= project.status === 'in_progress' ? 'selected' : '' %>>In Progress</option>
+                            <option value="planned" <%= project.status === 'planned' ? 'selected' : '' %>>Planned</option>
+                            <option value="completed" <%= project.status === 'completed' ? 'selected' : '' %>>Completed</option>
+                            <option value="on_hold" <%= project.status === 'on_hold' ? 'selected' : '' %>>On Hold</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 btn-sm">Update Project</button>
+                </form>
+            </div>
+
+            <div class="card shadow-sm border-0 rounded-4 bg-white p-4 mt-4">
+                <h5 class="fw-bold mb-3"><i class="bi bi-people me-2 text-success"></i>Assigned Site Personnel</h5>
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-semibold">Engr. David Okon</div>
+                            <small class="text-muted">Site Engineer (Field Lead)</small>
+                        </div>
+                        <span class="badge bg-success-subtle text-success">Active</span>
+                    </li>
+                    <li class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-semibold">Tunde Bakare</div>
+                            <small class="text-muted">Procurement Officer</small>
+                        </div>
+                        <span class="badge bg-info-subtle text-info">Materials</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- Add Budget Modal -->
+<div class="modal fade" id="addBudgetModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content rounded-4">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Add Budget / BOQ Line</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="/projects/budget/add">
+                <input type="hidden" name="project_id" value="<%= project.id %>">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Item / Description</label>
+                        <input class="form-control" name="budget_name" required placeholder="e.g. Structural Steel Beams">
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Category</label>
+                            <input class="form-control" name="category" required value="Materials">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Unit of Measure</label>
+                            <input class="form-control" name="unit_of_measure" required value="Tons">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Quantity</label>
+                            <input class="form-control" type="number" step="0.01" name="quantity" required value="10">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Unit Cost (₦)</label>
+                            <input class="form-control" type="number" step="1" name="unit_cost" required value="750000">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Target Supplier</label>
+                        <input class="form-control" name="supplier" placeholder="e.g. Tiger Steel Ltd">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Line</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Add Site Log Modal -->
+<div class="modal fade" id="addSiteLogModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content rounded-4">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Record Daily Site Progress</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="/projects/daily-progress/add">
+                <input type="hidden" name="project_id" value="<%= project.id %>">
+                <div class="modal-body p-4">
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Date</label>
+                            <input class="form-control" type="date" name="log_date" required value="<%= new Date().toISOString().split('T')[0] %>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Weather</label>
+                            <input class="form-control" name="weather" required value="Clear & Sunny (31°C)">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Work Executed</label>
+                        <textarea class="form-control" name="completed_work" rows="3" required placeholder="Describe milestones achieved today..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Manpower Deployed</label>
+                        <input class="form-control" name="manpower" placeholder="e.g. 24 workers (2 foremen, 10 masons, 12 labourers)" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Plant & Machinery Active</label>
+                        <input class="form-control" name="equipment" placeholder="e.g. 1x Excavator, 2x Dump Trucks" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Safety Briefing & Notes</label>
+                        <input class="form-control" name="safety_note" value="Toolbox meeting completed. Zero incidents reported." required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning text-dark fw-semibold">Submit Report</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<%- include('layouts/footer') %>
