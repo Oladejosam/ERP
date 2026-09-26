@@ -1,0 +1,141 @@
+<%- include('layouts/header') %>
+<%- include('layouts/sidebar') %>
+
+<main class="col-lg-10 p-4">
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="window.history.back();">
+        <i class="bi bi-arrow-left"></i> Back
+    </button>
+
+    <div class="card shadow-sm border-0 rounded-4 bg-white">
+        <div class="card-body p-4">
+            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4">
+                <div>
+                    <h2 class="fw-bold mb-1">Procurement & Purchase Orders</h2>
+                    <p class="text-muted mb-0">Manage vendor purchasing, supply contracts, and inventory receipts for <strong><%= company.company_name %></strong>.</p>
+                </div>
+                <button class="btn btn-primary rounded-3" type="button" data-bs-toggle="modal" data-bs-target="#newPOModal">
+                    <i class="bi bi-plus-lg me-1"></i>Raise Purchase Order
+                </button>
+            </div>
+
+            <% if (typeof flash !== 'undefined' && flash) { %>
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="bi bi-check-circle me-2"></i><%= flash %>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <% } %>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>PO Number</th>
+                            <th>Vendor / Supplier</th>
+                            <th>Project Reference</th>
+                            <th>Date Issued</th>
+                            <th>Expected Delivery</th>
+                            <th>Total Amount</th>
+                            <th>Fulfillment Status</th>
+                            <th>Payment</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% purchaseOrders.forEach(function(po) { %>
+                            <tr>
+                                <td><span class="badge bg-secondary-subtle text-secondary font-monospace"><%= po.po_number %></span></td>
+                                <td class="fw-bold text-dark"><%= po.supplier_name %></td>
+                                <td><%= po.project_name %></td>
+                                <td class="small text-muted"><%= po.issue_date %></td>
+                                <td class="small text-muted"><%= po.expected_delivery %></td>
+                                <td class="fw-bold text-dark">₦<%= (po.total_amount).toLocaleString('en-US') %></td>
+                                <td>
+                                    <% if (po.status === 'received') { %>
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-check2 me-1"></i>Delivered</span>
+                                    <% } else { %>
+                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="bi bi-hourglass-split me-1"></i>Awaiting Delivery</span>
+                                    <% } %>
+                                </td>
+                                <td>
+                                    <% if (po.payment_status === 'paid') { %>
+                                        <span class="badge bg-success">Paid</span>
+                                    <% } else if (po.payment_status === 'partial') { %>
+                                        <span class="badge bg-warning text-dark">50% Advance</span>
+                                    <% } else { %>
+                                        <span class="badge bg-secondary">Unpaid</span>
+                                    <% } %>
+                                </td>
+                                <td class="text-end">
+                                    <% if (po.status !== 'received') { %>
+                                        <form method="post" action="/management/procurement/receive/save" class="d-inline">
+                                            <input type="hidden" name="po_id" value="<%= po.id %>">
+                                            <button type="submit" class="btn btn-sm btn-outline-success">
+                                                <i class="bi bi-box-arrow-in-down me-1"></i>Receive Delivery
+                                            </button>
+                                        </form>
+                                    <% } else { %>
+                                        <a href="/management/procurement/receipt?id=<%= po.id %>" class="btn btn-sm btn-outline-secondary">
+                                            <i class="bi bi-receipt me-1"></i>View Goods Receipt
+                                        </a>
+                                    <% } %>
+                                </td>
+                            </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- New PO Modal -->
+<div class="modal fade" id="newPOModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content rounded-4">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Raise New Purchase Order</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="/management/procurement/create">
+                <div class="modal-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Vendor / Supplier</label>
+                            <select class="form-select" name="supplier_name" required>
+                                <% suppliers.forEach(function(s) { %>
+                                    <option value="<%= s.company_name %>"><%= s.company_name %> (<%= s.supplier_code %>)</option>
+                                <% }); %>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Destination Project</label>
+                            <select class="form-select" name="project_name" required>
+                                <% projects.forEach(function(p) { %>
+                                    <option value="<%= p.name %>"><%= p.name %> (<%= p.project_number %>)</option>
+                                <% }); %>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Expected Delivery Date</label>
+                            <input class="form-control" type="date" name="expected_delivery" required value="<%= new Date(Date.now() + 10*24*60*60*1000).toISOString().split('T')[0] %>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Total Order Amount (₦)</label>
+                            <input class="form-control" type="number" name="total_amount" value="3500000" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Items Description</label>
+                            <textarea class="form-control" name="description" rows="3" placeholder="e.g. Supply and haulage of 45 tons 20mm granite aggregate to Section B" required></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold"><i class="bi bi-cart-check me-1"></i>Issue Purchase Order</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<%- include('layouts/footer') %>

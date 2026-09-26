@@ -1,4 +1,0 @@
-<?php
-$contentView = APP_ROOT . '/app/Views/management/payroll_processing_content.php';
-require APP_ROOT . '/app/Views/layouts/main.php';
-?>

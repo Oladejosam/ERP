@@ -1,0 +1,49 @@
+<%- include('layouts/header') %>
+<%- include('layouts/sidebar') %>
+
+<main class="col-lg-10 p-4">
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="window.history.back();">
+        <i class="bi bi-arrow-left"></i> Back
+    </button>
+
+    <div class="card shadow-sm border-0 rounded-4 bg-white p-4">
+        <h2 class="fw-bold mb-1">Company Setup & Global Preferences</h2>
+        <p class="text-muted mb-4">Configure base currency, legal company identity, and theme branding.</p>
+
+        <% if (typeof flash !== 'undefined' && flash) { %>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="bi bi-check-circle me-2"></i><%= flash %>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <% } %>
+
+        <form method="post" action="/setup">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Registered Entity Name</label>
+                    <input class="form-control" name="company_name" value="<%= company.company_name %>" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Default Operational Currency</label>
+                    <input class="form-control" name="currency" value="<%= company.currency || '₦' %>" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Corporate Accent Theme Color</label>
+                    <div class="input-group">
+                        <input type="color" class="form-control form-control-color" name="theme_color" value="<%= company.theme_color || '#1d4ed8' %>" title="Choose color">
+                        <input type="text" class="form-control" value="<%= company.theme_color || '#1d4ed8' %>" readonly>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">System Timezone</label>
+                    <input class="form-control" value="Africa/Lagos (GMT+1)" readonly>
+                </div>
+                <div class="col-12 mt-4">
+                    <button type="submit" class="btn btn-primary fw-semibold"><i class="bi bi-save me-1"></i>Save Configuration</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</main>
+
+<%- include('layouts/footer') %>

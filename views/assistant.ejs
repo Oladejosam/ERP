@@ -1,0 +1,322 @@
+<%- include('layouts/header') %>
+<%- include('layouts/sidebar') %>
+
+<main class="col-lg-10 p-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <a class="btn btn-outline-secondary btn-sm rounded-3" href="/dashboard">
+                    <i class="bi bi-arrow-left me-1"></i>Dashboard
+                </a>
+                <h2 class="fw-bold mb-0">ERP AI Assistant</h2>
+                <span class="badge bg-warning-subtle text-dark px-3 py-1 rounded-pill border border-warning-subtle fw-semibold">
+                    <i class="bi bi-cpu-fill text-warning me-1"></i>Operational Intelligence
+                </span>
+            </div>
+            <p class="text-muted mb-0">
+                Ask natural language questions about projects, site logs, requisitions, inventory, and budgets for <strong><%= company.company_name %></strong>.
+            </p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-light text-dark border p-2">
+                <i class="bi bi-person-lock me-1 text-primary"></i>Scoped to: <strong><%= user.role_name %></strong>
+            </span>
+            <button class="btn btn-outline-secondary btn-sm rounded-3" onclick="clearFullChat()">
+                <i class="bi bi-trash me-1"></i>Reset Conversation
+            </button>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Main Chat Area -->
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0 rounded-4 bg-white d-flex flex-column" style="height: 680px;">
+                <!-- Chat Header -->
+                <div class="card-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="p-2 bg-primary-subtle text-primary rounded-circle fs-5 d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
+                            <i class="bi bi-robot"></i>
+                        </div>
+                        <div>
+                            <h6 class="fw-bold mb-0 text-dark"><%= company.company_name %> ERP Copilot</h6>
+                            <small class="text-success d-flex align-items-center gap-1">
+                                <span class="p-1 bg-success rounded-circle d-inline-block"></span> Secure Server-Side Integration
+                            </small>
+                        </div>
+                    </div>
+                    <span class="badge bg-secondary-subtle text-secondary font-monospace">Gemini 3.8 Flash</span>
+                </div>
+
+                <!-- Messages Container -->
+                <div class="card-body p-4 flex-grow-1 overflow-auto" id="assistantMessages" style="background: #f8fafc;">
+                    <!-- Welcome Message -->
+                    <div class="d-flex gap-3 mb-4">
+                        <div class="flex-shrink-0">
+                            <div class="bg-primary text-white rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                                <i class="bi bi-robot fs-5"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="p-3 rounded-4 bg-white shadow-sm border" style="max-width: 85%;">
+                                <div class="fw-bold text-primary mb-1">ERP Assistant</div>
+                                <p class="mb-2 text-dark">
+                                    Hello <strong><%= user.name %></strong>! I am your <strong><%= company.company_name %></strong> construction ERP assistant.
+                                </p>
+                                <p class="mb-2 text-secondary small">
+                                    I have access to real-time project progress, bill of quantities (BOQ), warehouse inventory levels, and material requisition approvals according to your <strong><%= user.role_name %></strong> role permissions.
+                                </p>
+                                <div class="small fw-semibold text-muted">Try asking:</div>
+                                <div class="d-flex flex-wrap gap-2 mt-2">
+                                    <button class="btn btn-sm btn-outline-primary rounded-pill prompt-pill" onclick="sendQuickPrompt(this)">
+                                        What projects are currently active?
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary rounded-pill prompt-pill" onclick="sendQuickPrompt(this)">
+                                        Which materials are low in stock?
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary rounded-pill prompt-pill" onclick="sendQuickPrompt(this)">
+                                        How many requisitions are pending approval?
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary rounded-pill prompt-pill" onclick="sendQuickPrompt(this)">
+                                        What is the progress of the Bridge Extension project?
+                                    </button>
+                                </div>
+                            </div>
+                            <small class="text-muted ms-2 mt-1 d-block" style="font-size: 0.72rem;">Just now</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input Footer -->
+                <div class="card-footer bg-white border-top p-3">
+                    <form id="assistantForm" onsubmit="handleAssistantSubmit(event)">
+                        <div class="input-group">
+                            <input type="text" id="assistantInput" class="form-control border-end-0 py-2 ps-3 rounded-start-pill" placeholder="Ask anything about projects, materials, requisitions..." autocomplete="off" required>
+                            <button class="btn btn-primary rounded-end-pill px-4" type="submit" id="assistantSendBtn">
+                                <i class="bi bi-send-fill me-1"></i>Send
+                            </button>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-2 px-2">
+                            <small class="text-muted" style="font-size: 0.75rem;">
+                                <i class="bi bi-shield-check text-success me-1"></i>Backend role-permission filtered &bull; API keys protected server-side
+                            </small>
+                            <small class="text-muted" style="font-size: 0.75rem;">Press <kbd>Enter</kbd> to send</small>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: Quick Knowledge & Context -->
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 rounded-4 bg-white p-4 mb-4">
+                <h6 class="fw-bold mb-3"><i class="bi bi-lightning-charge me-2 text-warning"></i>Suggested Questions</h6>
+                <div class="list-group list-group-flush gap-2">
+                    <button class="list-group-item list-group-item-action border rounded-3 p-2 small d-flex align-items-center justify-content-between" onclick="sendDirectPrompt('What projects are currently active and their progress?')">
+                        <span><i class="bi bi-building me-2 text-primary"></i>Active projects & completion %</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                    </button>
+                    <button class="list-group-item list-group-item-action border rounded-3 p-2 small d-flex align-items-center justify-content-between" onclick="sendDirectPrompt('Which materials are currently below their reorder level?')">
+                        <span><i class="bi bi-exclamation-triangle me-2 text-danger"></i>Low stock inventory alerts</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                    </button>
+                    <button class="list-group-item list-group-item-action border rounded-3 p-2 small d-flex align-items-center justify-content-between" onclick="sendDirectPrompt('What requisitions are currently awaiting approval?')">
+                        <span><i class="bi bi-file-earmark-text me-2 text-warning"></i>Requisitions awaiting approval</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                    </button>
+                    <button class="list-group-item list-group-item-action border rounded-3 p-2 small d-flex align-items-center justify-content-between" onclick="sendDirectPrompt('What is our total contract portfolio value and allocated budgets?')">
+                        <span><i class="bi bi-cash-stack me-2 text-success"></i>Financial portfolio overview</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                    </button>
+                    <button class="list-group-item list-group-item-action border rounded-3 p-2 small d-flex align-items-center justify-content-between" onclick="sendDirectPrompt('Who is the Site Engineer assigned to Bridge Extension?')">
+                        <span><i class="bi bi-person-badge me-2 text-info"></i>Site personnel assignments</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="card shadow-sm border-0 rounded-4 bg-white p-4">
+                <h6 class="fw-bold mb-3"><i class="bi bi-info-circle me-2 text-primary"></i>Assistant Capabilities</h6>
+                <ul class="list-unstyled small text-muted mb-0 d-flex flex-column gap-2">
+                    <li class="d-flex align-items-start gap-2">
+                        <i class="bi bi-check2-circle text-success fs-6 mt-1"></i>
+                        <span><strong>Context Awareness:</strong> Understands your active company tenant and organizational role.</span>
+                    </li>
+                    <li class="d-flex align-items-start gap-2">
+                        <i class="bi bi-check2-circle text-success fs-6 mt-1"></i>
+                        <span><strong>Selective Scoping:</strong> Does not dump raw database tables; dynamically fetches targeted operational figures.</span>
+                    </li>
+                    <li class="d-flex align-items-start gap-2">
+                        <i class="bi bi-check2-circle text-success fs-6 mt-1"></i>
+                        <span><strong>Zero Client Key Exposure:</strong> Queries pass securely through the ERP backend handler.</span>
+                    </li>
+                    <li class="d-flex align-items-start gap-2">
+                        <i class="bi bi-check2-circle text-success fs-6 mt-1"></i>
+                        <span><strong>Fault-Tolerant Engine:</strong> In case of external network issues or missing keys, the built-in ERP rule engine responds instantly.</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+let chatConversation = [];
+
+function appendMessage(sender, text, isUser = false) {
+    const container = document.getElementById('assistantMessages');
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `d-flex gap-3 mb-4 ${isUser ? 'justify-content-end' : ''}`;
+
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (isUser) {
+        msgDiv.innerHTML = `
+            <div class="flex-grow-1 text-end">
+                <div class="p-3 rounded-4 bg-primary text-white shadow-sm d-inline-block text-start" style="max-width: 80%;">
+                    <div>${escapeHtml(text)}</div>
+                </div>
+                <small class="text-muted me-2 mt-1 d-block" style="font-size: 0.72rem;">${timestamp}</small>
+            </div>
+            <div class="flex-shrink-0">
+                <div class="bg-secondary text-white rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                    <i class="bi bi-person-fill fs-5"></i>
+                </div>
+            </div>
+        `;
+    } else {
+        msgDiv.innerHTML = `
+            <div class="flex-shrink-0">
+                <div class="bg-primary text-white rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                    <i class="bi bi-robot fs-5"></i>
+                </div>
+            </div>
+            <div class="flex-grow-1">
+                <div class="p-3 rounded-4 bg-white shadow-sm border" style="max-width: 85%;">
+                    <div class="fw-bold text-primary mb-1">ERP Assistant</div>
+                    <div class="text-dark lh-base assistant-bubble-content">${formatAssistantReply(text)}</div>
+                </div>
+                <small class="text-muted ms-2 mt-1 d-block" style="font-size: 0.72rem;">${timestamp}</small>
+            </div>
+        `;
+    }
+
+    container.appendChild(msgDiv);
+    container.scrollTop = container.scrollHeight;
+}
+
+function appendTypingIndicator() {
+    const container = document.getElementById('assistantMessages');
+    const id = 'typingIndicator_' + Date.now();
+    const typingDiv = document.createElement('div');
+    typingDiv.id = id;
+    typingDiv.className = 'd-flex gap-3 mb-4';
+    typingDiv.innerHTML = `
+        <div class="flex-shrink-0">
+            <div class="bg-primary text-white rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                <i class="bi bi-robot fs-5"></i>
+            </div>
+        </div>
+        <div class="flex-grow-1">
+            <div class="p-3 rounded-4 bg-white shadow-sm border d-inline-block">
+                <div class="d-flex align-items-center gap-2 text-muted">
+                    <div class="spinner-grow spinner-grow-sm text-primary" role="status"></div>
+                    <small>Analyzing ERP records...</small>
+                </div>
+            </div>
+        </div>
+    `;
+    container.appendChild(typingDiv);
+    container.scrollTop = container.scrollHeight;
+    return id;
+}
+
+function removeTypingIndicator(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+}
+
+function sendQuickPrompt(btn) {
+    const text = btn.innerText.trim();
+    document.getElementById('assistantInput').value = text;
+    document.getElementById('assistantForm').dispatchEvent(new Event('submit', { cancelable: true }));
+}
+
+function sendDirectPrompt(text) {
+    document.getElementById('assistantInput').value = text;
+    document.getElementById('assistantForm').dispatchEvent(new Event('submit', { cancelable: true }));
+}
+
+async function handleAssistantSubmit(event) {
+    event.preventDefault();
+    const input = document.getElementById('assistantInput');
+    const sendBtn = document.getElementById('assistantSendBtn');
+    const query = input.value.trim();
+    if (!query) return;
+
+    input.value = '';
+    input.disabled = true;
+    sendBtn.disabled = true;
+
+    appendMessage('user', query, true);
+    chatConversation.push({ role: 'user', content: query });
+
+    const typingId = appendTypingIndicator();
+
+    try {
+        const response = await fetch('/api/chatbot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: query,
+                history: chatConversation.slice(-6)
+            })
+        });
+
+        const data = await response.json();
+        removeTypingIndicator(typingId);
+
+        if (data && data.reply) {
+            appendMessage('assistant', data.reply, false);
+            chatConversation.push({ role: 'model', content: data.reply });
+        } else {
+            appendMessage('assistant', data.error || 'Sorry, could not process that request. Please try again.', false);
+        }
+    } catch (err) {
+        removeTypingIndicator(typingId);
+        appendMessage('assistant', 'Network communication issue with ERP server. Please verify connectivity.', false);
+    } finally {
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+    }
+}
+
+function clearFullChat() {
+    chatConversation = [];
+    const container = document.getElementById('assistantMessages');
+    // keep initial welcome
+    const welcome = container.firstElementChild;
+    container.innerHTML = '';
+    if (welcome) container.appendChild(welcome);
+}
+
+function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, function(m) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+    });
+}
+
+function formatAssistantReply(text) {
+    // Basic Markdown bullet and bold formatting
+    let formatted = escapeHtml(text);
+    // Bold
+    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Bullets
+    formatted = formatted.replace(/^\*\s+(.*)$/gm, '&bull; $1<br>');
+    formatted = formatted.replace(/\n\n/g, '<br><br>');
+    formatted = formatted.replace(/\n/g, '<br>');
+    return formatted;
+}
+</script>
+
+<%- include('layouts/footer') %>
