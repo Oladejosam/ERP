@@ -1,0 +1,205 @@
+        </div>
+    </div>
+</div>
+
+<!-- Floating ERP AI Assistant Widget Button -->
+<div class="position-fixed" style="bottom: 24px; right: 24px; z-index: 1050;">
+    <button class="btn btn-primary rounded-circle shadow-lg d-flex align-items-center justify-content-center p-0" id="erpAssistantFab" type="button" data-bs-toggle="offcanvas" data-bs-target="#erpAssistantOffcanvas" style="width: 56px; height: 56px; border: 2px solid #ffffff;" title="Ask ERP Assistant">
+        <i class="bi bi-robot fs-4"></i>
+    </button>
+</div>
+
+<!-- ERP Assistant Offcanvas Drawer -->
+<div class="offcanvas offcanvas-end shadow-lg border-0" tabindex="-1" id="erpAssistantOffcanvas" style="width: 440px; border-radius: 18px 0 0 18px;">
+    <div class="offcanvas-header bg-primary text-white p-3">
+        <div class="d-flex align-items-center gap-2">
+            <div class="p-2 bg-white bg-opacity-25 rounded-circle d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                <i class="bi bi-robot fs-5 text-white"></i>
+            </div>
+            <div>
+                <h6 class="offcanvas-title fw-bold mb-0">ERP AI Assistant</h6>
+                <small class="text-white-50"><%= typeof company !== 'undefined' ? company.company_name : 'Construction ERP' %></small>
+            </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <a href="/modules/assistant" class="btn btn-sm btn-outline-light py-1 px-2" title="Open Fullscreen Page">
+                <i class="bi bi-arrows-angle-expand"></i>
+            </a>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+    </div>
+    <div class="offcanvas-body d-flex flex-column p-0 bg-light">
+        <div class="p-2 bg-white border-bottom small text-muted d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-shield-check text-success me-1"></i>Scoped: <%= typeof user !== 'undefined' ? user.role_name : 'Staff' %></span>
+            <button class="btn btn-link btn-sm text-secondary p-0 text-decoration-none" onclick="clearOffcanvasChat()">Clear</button>
+        </div>
+
+        <!-- Chat messages container -->
+        <div class="flex-grow-1 p-3 overflow-auto" id="offcanvasMessages" style="height: 380px;">
+            <div class="d-flex gap-2 mb-3">
+                <div class="bg-primary text-white rounded-circle p-1 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 30px; height: 30px;">
+                    <i class="bi bi-robot small"></i>
+                </div>
+                <div class="p-2 bg-white rounded-3 shadow-sm border small" style="max-width: 85%;">
+                    Hello! Ask me about active projects, low stock items, or pending requisitions.
+                    <div class="mt-2 d-flex flex-column gap-1">
+                        <button class="btn btn-xs btn-outline-primary text-start rounded-pill py-1 px-2 font-monospace" style="font-size: 0.72rem;" onclick="offcanvasSendPrompt(this.innerText)">
+                            What projects are active?
+                        </button>
+                        <button class="btn btn-xs btn-outline-primary text-start rounded-pill py-1 px-2 font-monospace" style="font-size: 0.72rem;" onclick="offcanvasSendPrompt(this.innerText)">
+                            Which materials are low in stock?
+                        </button>
+                        <button class="btn btn-xs btn-outline-primary text-start rounded-pill py-1 px-2 font-monospace" style="font-size: 0.72rem;" onclick="offcanvasSendPrompt(this.innerText)">
+                            Pending requisitions summary
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Offcanvas input -->
+        <div class="p-3 bg-white border-top">
+            <form id="offcanvasChatForm" onsubmit="handleOffcanvasSubmit(event)">
+                <div class="input-group">
+                    <input type="text" id="offcanvasInput" class="form-control form-control-sm rounded-start-pill" placeholder="Ask ERP question..." autocomplete="off" required>
+                    <button class="btn btn-primary btn-sm rounded-end-pill px-3" type="submit" id="offcanvasSendBtn">
+                        <i class="bi bi-send-fill"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(() => {
+    const toggle = document.getElementById('menuToggle');
+    const page = document.querySelector('.container-fluid');
+    if (!toggle || !page) return;
+
+    const setMenuState = (collapsed) => {
+        page.classList.toggle('menu-collapsed', collapsed);
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+        toggle.setAttribute('title', collapsed ? 'Expand menu' : 'Collapse menu');
+        const icon = toggle.querySelector('i');
+        if (icon) {
+            icon.className = collapsed ? 'bi bi-layout-sidebar' : 'bi bi-layout-sidebar-inset';
+        }
+    };
+
+    setMenuState(localStorage.getItem('erpMenuCollapsed') === 'true');
+    toggle.addEventListener('click', () => {
+        const collapsed = !page.classList.contains('menu-collapsed');
+        setMenuState(collapsed);
+        localStorage.setItem('erpMenuCollapsed', String(collapsed));
+    });
+})();
+
+// Floating Assistant Handler
+let offcanvasConversation = [];
+
+function offcanvasSendPrompt(text) {
+    document.getElementById('offcanvasInput').value = text;
+    document.getElementById('offcanvasChatForm').dispatchEvent(new Event('submit', { cancelable: true }));
+}
+
+async function handleOffcanvasSubmit(event) {
+    event.preventDefault();
+    const input = document.getElementById('offcanvasInput');
+    const sendBtn = document.getElementById('offcanvasSendBtn');
+    const container = document.getElementById('offcanvasMessages');
+    const query = input.value.trim();
+    if (!query) return;
+
+    input.value = '';
+    input.disabled = true;
+    sendBtn.disabled = true;
+
+    // Append user msg
+    const userDiv = document.createElement('div');
+    userDiv.className = 'd-flex justify-content-end mb-2';
+    userDiv.innerHTML = `<div class="p-2 bg-primary text-white rounded-3 shadow-sm small text-start" style="max-width: 85%;">${escapeOffHtml(query)}</div>`;
+    container.appendChild(userDiv);
+    container.scrollTop = container.scrollHeight;
+
+    // Typing
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'd-flex gap-2 mb-2';
+    typingDiv.id = 'offcanvasTyping';
+    typingDiv.innerHTML = `
+        <div class="bg-primary text-white rounded-circle p-1 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 26px; height: 26px;">
+            <i class="bi bi-robot" style="font-size: 0.7rem;"></i>
+        </div>
+        <div class="p-2 bg-white rounded-3 shadow-sm border small text-muted">
+            <span class="spinner-grow spinner-grow-sm text-primary"></span> Thinking...
+        </div>
+    `;
+    container.appendChild(typingDiv);
+    container.scrollTop = container.scrollHeight;
+
+    try {
+        const res = await fetch('/api/chatbot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: query, history: offcanvasConversation.slice(-6) })
+        });
+        const data = await res.json();
+        const typingEl = document.getElementById('offcanvasTyping');
+        if (typingEl) typingEl.remove();
+
+        const botDiv = document.createElement('div');
+        botDiv.className = 'd-flex gap-2 mb-2';
+        const replyHtml = formatOffReply(data.reply || data.error || 'No response available.');
+        botDiv.innerHTML = `
+            <div class="bg-primary text-white rounded-circle p-1 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 26px; height: 26px;">
+                <i class="bi bi-robot" style="font-size: 0.7rem;"></i>
+            </div>
+            <div class="p-2 bg-white rounded-3 shadow-sm border small text-dark lh-sm" style="max-width: 85%;">
+                ${replyHtml}
+            </div>
+        `;
+        container.appendChild(botDiv);
+        container.scrollTop = container.scrollHeight;
+
+        offcanvasConversation.push({ role: 'user', content: query });
+        offcanvasConversation.push({ role: 'model', content: data.reply || '' });
+    } catch (err) {
+        const typingEl = document.getElementById('offcanvasTyping');
+        if (typingEl) typingEl.remove();
+        const errDiv = document.createElement('div');
+        errDiv.className = 'text-center text-danger small my-2';
+        errDiv.innerText = 'Error communicating with assistant.';
+        container.appendChild(errDiv);
+    } finally {
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+    }
+}
+
+function clearOffcanvasChat() {
+    offcanvasConversation = [];
+    const container = document.getElementById('offcanvasMessages');
+    const welcome = container.firstElementChild;
+    container.innerHTML = '';
+    if (welcome) container.appendChild(welcome);
+}
+
+function escapeOffHtml(str) {
+    return str.replace(/[&<>"']/g, function(m) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+    });
+}
+
+function formatOffReply(text) {
+    let formatted = escapeOffHtml(text);
+    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    formatted = formatted.replace(/^\*\s+(.*)$/gm, '&bull; $1<br>');
+    formatted = formatted.replace(/\n\n/g, '<br><br>');
+    formatted = formatted.replace(/\n/g, '<br>');
+    return formatted;
+}
+</script>
+</body>
+</html>

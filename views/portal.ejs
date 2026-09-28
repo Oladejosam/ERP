@@ -1,0 +1,110 @@
+<%- include('layouts/header') %>
+<%- include('layouts/sidebar') %>
+
+<main class="col-lg-10 p-4">
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="window.history.back();">
+        <i class="bi bi-arrow-left"></i> Back
+    </button>
+
+    <div class="card shadow-sm border-0 rounded-4 bg-white p-4 mb-4">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+            <div>
+                <span class="badge bg-primary text-white mb-2 text-uppercase"><%= portalRole %> Workspace</span>
+                <h2 class="fw-bold mb-1"><%= portalRole %> Executive Desk</h2>
+                <p class="text-muted mb-0">Role-tailored controls and priorities for <strong><%= user.name %></strong>.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="/dashboard" class="btn btn-outline-primary btn-sm"><i class="bi bi-speedometer2 me-1"></i>Full ERP View</a>
+                <a href="/modules/chat" class="btn btn-outline-secondary btn-sm"><i class="bi bi-chat-dots me-1"></i>Team Chat</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Role Specific Cards -->
+        <% if (portalRole.toLowerCase().includes('director') || portalRole.toLowerCase().includes('admin')) { %>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-shield-check text-success me-2"></i>Executive Approvals</h5>
+                    <p class="text-muted small">You have <strong><%= pendingReqsCount %></strong> requisitions awaiting your executive signoff.</p>
+                    <a href="/requisition" class="btn btn-primary btn-sm w-100 mt-auto">Review Requisitions</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-graph-up-arrow text-primary me-2"></i>Financial Position</h5>
+                    <p class="text-muted small">Total contract volume across all ongoing operations is <strong>₦<%= contractTotal.toLocaleString('en-US') %></strong>.</p>
+                    <a href="/modules/accounting" class="btn btn-outline-primary btn-sm w-100 mt-auto">View Accounts Ledger</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-building me-2 text-warning"></i>Project Oversight</h5>
+                    <p class="text-muted small">Monitoring <strong><%= projectsCount %></strong> active construction sites in Abuja and environs.</p>
+                    <a href="/modules/projects" class="btn btn-outline-warning text-dark btn-sm w-100 mt-auto">Inspect Sites</a>
+                </div>
+            </div>
+        <% } else if (portalRole.toLowerCase().includes('engineer')) { %>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-journal-plus text-warning me-2"></i>Daily Site Reports</h5>
+                    <p class="text-muted small">Log daily manpower, machinery usage, weather conditions, and safety meetings.</p>
+                    <a href="/modules/projects" class="btn btn-warning text-dark btn-sm w-100 mt-auto">Record Site Log</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-file-earmark-plus text-primary me-2"></i>Site Material Requests</h5>
+                    <p class="text-muted small">Raise urgent material requisitions for cement, rebar, gravel, or PVC pipes.</p>
+                    <a href="/requisition" class="btn btn-primary btn-sm w-100 mt-auto">Raise Requisition</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-box-seam text-success me-2"></i>Warehouse Inventory</h5>
+                    <p class="text-muted small">Check stock levels before requisitioning materials for foundation or slab works.</p>
+                    <a href="/modules/inventory" class="btn btn-outline-success btn-sm w-100 mt-auto">Check Stock</a>
+                </div>
+            </div>
+        <% } else if (portalRole.toLowerCase().includes('accountant') || portalRole.toLowerCase().includes('finance')) { %>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-cash-stack text-success me-2"></i>Disbursement Ledger</h5>
+                    <p class="text-muted small">Review vendor purchase order reconciliations and issue payment vouchers.</p>
+                    <a href="/modules/accounting" class="btn btn-success btn-sm w-100 mt-auto">Disburse Payments</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-people text-info me-2"></i>Payroll Vouchers</h5>
+                    <p class="text-muted small">Audit and reconcile employee monthly payroll, deductions, and loan repayments.</p>
+                    <a href="/management/hr" class="btn btn-info text-white btn-sm w-100 mt-auto">Manage Payroll</a>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-cart3 text-primary me-2"></i>PO Matching</h5>
+                    <p class="text-muted small">Three-way match purchase orders against delivery waybills and vendor invoices.</p>
+                    <a href="/management/procurement" class="btn btn-outline-primary btn-sm w-100 mt-auto">Verify POs</a>
+                </div>
+            </div>
+        <% } else { %>
+            <div class="col-md-6">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-cart3 text-primary me-2"></i>Procurement Desk</h5>
+                    <p class="text-muted small">Generate purchase orders, negotiate vendor prices, and supervise delivery logistics.</p>
+                    <a href="/management/procurement" class="btn btn-primary btn-sm w-100 mt-auto">Open Procurement</a>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card shadow-sm border-0 rounded-4 bg-white p-4 h-100">
+                    <h5 class="fw-bold text-dark mb-3"><i class="bi bi-box-seam text-warning me-2"></i>Inventory Receipt</h5>
+                    <p class="text-muted small">Inspect incoming shipments and issue goods received notes (GRN) to warehouse.</p>
+                    <a href="/modules/inventory" class="btn btn-warning text-dark btn-sm w-100 mt-auto">Warehouse Stock</a>
+                </div>
+            </div>
+        <% } %>
+    </div>
+</main>
+
+<%- include('layouts/footer') %>

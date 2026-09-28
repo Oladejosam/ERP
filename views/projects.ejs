@@ -1,0 +1,158 @@
+<%- include('layouts/header') %>
+<%- include('layouts/sidebar') %>
+
+<main class="col-lg-10 p-4">
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="window.history.back();">
+        <i class="bi bi-arrow-left"></i> Back
+    </button>
+
+    <div class="card shadow-sm border-0 rounded-4 bg-white">
+        <div class="card-body p-4">
+            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4">
+                <div>
+                    <h2 class="fw-bold mb-1">Projects Portfolio</h2>
+                    <p class="text-muted mb-0">Manage civil works and infrastructure projects for <strong><%= company.company_name %></strong>.</p>
+                </div>
+                <button class="btn btn-primary rounded-3" type="button" data-bs-toggle="modal" data-bs-target="#addProjectModal">
+                    <i class="bi bi-plus-lg me-1"></i>New Project
+                </button>
+            </div>
+
+            <% if (typeof flash !== 'undefined' && flash) { %>
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="bi bi-check-circle me-2"></i><%= flash %>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <% } %>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Project Code</th>
+                            <th>Project Name</th>
+                            <th>Client</th>
+                            <th>Location</th>
+                            <th>Schedule</th>
+                            <th>Progress</th>
+                            <th>Status</th>
+                            <th class="text-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% if (!projects || projects.length === 0) { %>
+                            <tr><td colspan="8" class="text-center text-muted py-4">No projects registered.</td></tr>
+                        <% } else { %>
+                            <% projects.forEach(function(p) { %>
+                                <tr>
+                                    <td><span class="badge bg-secondary-subtle text-secondary font-monospace"><%= p.project_number %></span></td>
+                                    <td class="fw-bold text-dark"><%= p.name %></td>
+                                    <td><%= p.client_name || 'Not specified' %></td>
+                                    <td><i class="bi bi-geo-alt text-danger me-1"></i><%= p.site_location %></td>
+                                    <td class="small text-muted"><%= p.start_date %> to <%= p.end_date %></td>
+                                    <td style="min-width: 140px;">
+                                        <div class="d-flex justify-content-between small text-muted mb-1">
+                                            <span><%= p.progress_percent %>%</span>
+                                        </div>
+                                        <div class="progress" style="height: 8px;">
+                                            <div class="progress-bar bg-success" role="progressbar" style="width: <%= p.progress_percent %>%;"></div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-primary-subtle text-primary text-capitalize px-2 py-1">
+                                            <%= p.status.replace('_', ' ') %>
+                                        </span>
+                                    </td>
+                                    <td class="text-end">
+                                        <a class="btn btn-sm btn-outline-primary" href="/projects/detail?id=<%= p.id %>">
+                                            <i class="bi bi-eye me-1"></i>View Details
+                                        </a>
+                                    </td>
+                                </tr>
+                            <% }); %>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- New Project Modal -->
+<div class="modal fade" id="addProjectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content rounded-4">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-building-add me-2 text-primary"></i>Register New Project</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="/projects/save">
+                <div class="modal-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Project Code</label>
+                            <input class="form-control" name="project_number" placeholder="PRJ-2026-004" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Project Name</label>
+                            <input class="form-control" name="name" placeholder="e.g. Airport Access Road Dualization" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Client / Customer</label>
+                            <select class="form-select" name="client_name" required>
+                                <% customers.forEach(function(c) { %>
+                                    <option value="<%= c.company_name %>"><%= c.company_name %></option>
+                                <% }); %>
+                                <option value="Federal Capital Development Authority">Federal Capital Development Authority (FCDA)</option>
+                                <option value="Private Investor Consortium">Private Investor Consortium</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Engineering Consultant</label>
+                            <input class="form-control" name="consultant" placeholder="e.g. Ove Arup & Partners">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Contract Value (₦)</label>
+                            <input class="form-control" type="number" min="0" step="1000" name="contract_value" value="50000000" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Allocated Budget (₦)</label>
+                            <input class="form-control" type="number" min="0" step="1000" name="budget" value="40000000" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Start Date</label>
+                            <input class="form-control" type="date" name="start_date" required value="2026-10-01">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Estimated End Date</label>
+                            <input class="form-control" type="date" name="end_date" required value="2027-06-30">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Initial Progress %</label>
+                            <input class="form-control" type="number" min="0" max="100" name="progress_percent" value="0">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-semibold">Site Location</label>
+                            <input class="form-control" name="site_location" placeholder="e.g. Phase II, Airport Expressway, Abuja" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Status</label>
+                            <select class="form-select" name="status">
+                                <option value="in_progress" selected>In Progress</option>
+                                <option value="planned">Planned</option>
+                                <option value="completed">Completed</option>
+                                <option value="on_hold">On Hold</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold"><i class="bi bi-check2-circle me-1"></i>Save Project</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<%- include('layouts/footer') %>

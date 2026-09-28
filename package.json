@@ -1,0 +1,19 @@
+{
+  "name": "construction-erp",
+  "version": "1.0.0",
+  "description": "Construction ERP System migrated to Node.js / Express + EJS",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build": "node -e \"console.log('Build completed successfully')\""
+  },
+  "dependencies": {
+    "@google/genai": "^2.24.0",
+    "cookie-parser": "^1.4.7",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "multer": "^2.4.0"
+  }
+}

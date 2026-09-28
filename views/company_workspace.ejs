@@ -1,0 +1,89 @@
+<%- include('layouts/header') %>
+<%- include('layouts/sidebar') %>
+
+<main class="col-lg-10 p-4">
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="window.history.back();">
+        <i class="bi bi-arrow-left"></i> Back
+    </button>
+
+    <div class="card shadow-sm border-0 rounded-4 bg-white p-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="fw-bold mb-1">Company Workspace & Branding</h2>
+                <p class="text-muted mb-0">Multi-company tenant management and corporate theme configuration.</p>
+            </div>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newCompanyModal">
+                <i class="bi bi-plus-lg me-1"></i>New Company
+            </button>
+        </div>
+
+        <% if (typeof flash !== 'undefined' && flash) { %>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="bi bi-check-circle me-2"></i><%= flash %>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <% } %>
+
+        <div class="row g-4">
+            <% companies.forEach(function(c) { %>
+                <div class="col-md-6">
+                    <div class="p-4 rounded-4 border <%= company.id === c.id ? 'border-primary bg-primary-subtle bg-opacity-10' : 'bg-light' %>">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <h4 class="fw-bold mb-1"><%= c.company_name %></h4>
+                                <span class="badge bg-secondary">Company ID #<%= c.id %></span>
+                            </div>
+                            <div class="p-2 rounded" style="background-color: <%= c.theme_color %>; width: 32px; height: 32px;" title="Theme Color: <%= c.theme_color %>"></div>
+                        </div>
+                        <p class="text-muted small mb-3">Currency: <strong><%= c.currency %></strong> &bull; Status: <span class="text-success fw-semibold">Active Tenant</span></p>
+                        
+                        <div class="d-flex gap-2">
+                            <% if (company.id !== c.id) { %>
+                                <form method="post" action="/setup/select-company">
+                                    <input type="hidden" name="company_id" value="<%= c.id %>">
+                                    <button type="submit" class="btn btn-outline-primary btn-sm">Switch to Workspace</button>
+                                </form>
+                            <% } else { %>
+                                <span class="badge bg-primary px-3 py-2"><i class="bi bi-check2 me-1"></i>Current Active Workspace</span>
+                            <% } %>
+                        </div>
+                    </div>
+                </div>
+            <% }); %>
+        </div>
+    </div>
+</main>
+
+<!-- New Company Modal -->
+<div class="modal fade" id="newCompanyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content rounded-4">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Create New Company Workspace</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="/company/create">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Company Name</label>
+                        <input class="form-control" name="company_name" placeholder="e.g. Apex Civil Contractors Ltd" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Theme Color (Hex)</label>
+                        <input class="form-control form-control-color w-100" type="color" name="theme_color" value="#059669">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Currency Symbol</label>
+                        <input class="form-control" name="currency" value="₦" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Company</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<%- include('layouts/footer') %>

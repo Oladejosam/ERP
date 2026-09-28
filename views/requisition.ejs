@@ -1,0 +1,189 @@
+<%- include('layouts/header') %>
+<%- include('layouts/sidebar') %>
+
+<main class="col-lg-10 p-4">
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" onclick="window.history.back();">
+        <i class="bi bi-arrow-left"></i> Back
+    </button>
+
+    <div class="card shadow-sm border-0 rounded-4 bg-white">
+        <div class="card-body p-4">
+            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-4">
+                <div>
+                    <h2 class="fw-bold mb-1">Material Requisitions</h2>
+                    <p class="text-muted mb-0">Multi-stage requisition authorizations for field and warehouse operations.</p>
+                </div>
+                <button class="btn btn-primary rounded-3" type="button" data-bs-toggle="modal" data-bs-target="#newRequisitionModal">
+                    <i class="bi bi-plus-lg me-1"></i>Create Requisition
+                </button>
+            </div>
+
+            <% if (typeof flash !== 'undefined' && flash) { %>
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="bi bi-check-circle me-2"></i><%= flash %>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            <% } %>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Req. Number</th>
+                            <th>Project</th>
+                            <th>Requested By</th>
+                            <th>Purpose / Justification</th>
+                            <th>Urgency</th>
+                            <th>Required Date</th>
+                            <th>Est. Total</th>
+                            <th>Status</th>
+                            <th class="text-end">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% requisitions.forEach(function(req) { %>
+                            <tr>
+                                <td><span class="badge bg-secondary-subtle text-secondary font-monospace"><%= req.requisition_no %></span></td>
+                                <td class="fw-bold text-dark"><%= req.project_name %></td>
+                                <td>
+                                    <div><%= req.requested_by_name %></div>
+                                    <small class="text-muted"><%= req.requested_by_role %></small>
+                                </td>
+                                <td class="small text-secondary" style="max-width: 250px;"><%= req.purpose %></td>
+                                <td>
+                                    <% if (req.urgency === 'high') { %>
+                                        <span class="badge bg-danger text-white">High</span>
+                                    <% } else if (req.urgency === 'medium') { %>
+                                        <span class="badge bg-warning text-dark">Medium</span>
+                                    <% } else { %>
+                                        <span class="badge bg-secondary">Normal</span>
+                                    <% } %>
+                                </td>
+                                <td class="small"><%= req.required_date %></td>
+                                <td class="fw-bold text-dark">₦<%= (req.total_amount).toLocaleString('en-US') %></td>
+                                <td>
+                                    <% if (req.status === 'approved') { %>
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle">Approved</span>
+                                    <% } else if (req.status === 'dispatched') { %>
+                                        <span class="badge bg-info-subtle text-info border border-info-subtle">Dispatched</span>
+                                    <% } else if (req.status === 'rejected') { %>
+                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Rejected</span>
+                                    <% } else { %>
+                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Pending Approval</span>
+                                    <% } %>
+                                </td>
+                                <td class="text-end">
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                            Actions
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                            <% if (req.status === 'pending') { %>
+                                                <li>
+                                                    <form method="post" action="/requisition/decision">
+                                                        <input type="hidden" name="requisition_id" value="<%= req.id %>">
+                                                        <input type="hidden" name="decision" value="approve">
+                                                        <button type="submit" class="dropdown-item text-success"><i class="bi bi-check-circle me-2"></i>Approve Requisition</button>
+                                                    </form>
+                                                </li>
+                                                <li>
+                                                    <form method="post" action="/requisition/decision">
+                                                        <input type="hidden" name="requisition_id" value="<%= req.id %>">
+                                                        <input type="hidden" name="decision" value="reject">
+                                                        <button type="submit" class="dropdown-item text-danger"><i class="bi bi-x-circle me-2"></i>Reject Requisition</button>
+                                                    </form>
+                                                </li>
+                                            <% } else if (req.status === 'approved') { %>
+                                                <li>
+                                                    <form method="post" action="/requisition/dispatch/approve">
+                                                        <input type="hidden" name="requisition_id" value="<%= req.id %>">
+                                                        <button type="submit" class="dropdown-item text-info"><i class="bi bi-truck me-2"></i>Generate Dispatch Note</button>
+                                                    </form>
+                                                </li>
+                                            <% } %>
+                                            <li><a class="dropdown-item" href="/requisition/delivery-note?id=<%= req.id %>"><i class="bi bi-file-earmark-text me-2"></i>Print Delivery Note</a></li>
+                                        </ul>
+                                    </div>
+                                </td>
+                            </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- New Requisition Modal -->
+<div class="modal fade" id="newRequisitionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content rounded-4">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-file-earmark-plus me-2 text-primary"></i>Raise Project Material Requisition</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="/requisition/save">
+                <div class="modal-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Target Project</label>
+                            <select class="form-select" name="project_id" required>
+                                <% projects.forEach(function(p) { %>
+                                    <option value="<%= p.id %>"><%= p.name %> (<%= p.project_number %>)</option>
+                                <% }); %>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Urgency Level</label>
+                            <select class="form-select" name="urgency">
+                                <option value="normal">Normal Priority</option>
+                                <option value="medium">Medium Priority</option>
+                                <option value="high">High / Urgent</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Required By Date</label>
+                            <input class="form-control" type="date" name="required_date" required value="<%= new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0] %>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Department</label>
+                            <input class="form-control" name="department" value="Civil Engineering" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Project Purpose & Justification</label>
+                            <textarea class="form-control" name="purpose" rows="2" placeholder="Explain where and why the materials are needed..." required></textarea>
+                        </div>
+                        <div class="col-12">
+                            <hr>
+                            <h6 class="fw-bold mb-3">Requisition Items</h6>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-5">
+                                    <label class="form-label small fw-semibold">Material Name</label>
+                                    <input class="form-control" name="item_name" placeholder="e.g. High-Yield Rebar 16mm" required>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small fw-semibold">Quantity</label>
+                                    <input class="form-control" type="number" name="quantity" value="50" required>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="form-label small fw-semibold">Unit</label>
+                                    <input class="form-control" name="unit" value="Lengths" required>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-semibold">Estimated Cost (₦)</label>
+                                    <input class="form-control" type="number" name="estimated_cost" value="710000" required>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold"><i class="bi bi-send me-1"></i>Submit for Approval</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<%- include('layouts/footer') %>
